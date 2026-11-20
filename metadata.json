@@ -1,0 +1,6 @@
+{
+  "name": "OX TRADERS - Cryptocurrency Investment Platform",
+  "description": "Enterprise cryptocurrency investment and trading platform with multi-currency deposits, double-entry financial ledger, investor dashboard, and administrator control center.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
