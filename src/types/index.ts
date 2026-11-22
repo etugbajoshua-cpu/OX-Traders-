@@ -1,5 +1,5 @@
 export interface User {
-  id: number;
+  id: string | number;
   email: string;
   full_name: string;
   phone?: string;
@@ -21,7 +21,7 @@ export interface WalletBalances {
 }
 
 export interface Transaction {
-  id: number;
+  id: string | number;
   transaction_ref: string;
   type: 'deposit' | 'withdrawal' | 'investment_open' | 'investment_return' | 'investment_principal_return' | 'referral_bonus' | 'balance_credit' | 'balance_debit' | 'fee';
   currency: string;
@@ -34,8 +34,8 @@ export interface Transaction {
 }
 
 export interface Deposit {
-  id: number;
-  user_id: number;
+  id: string | number;
+  user_id: string | number;
   currency: 'BTC' | 'USDT';
   network: string;
   deposit_address: string;
@@ -52,8 +52,8 @@ export interface Deposit {
 }
 
 export interface Withdrawal {
-  id: number;
-  user_id: number;
+  id: string | number;
+  user_id: string | number;
   currency: 'BTC' | 'USDT';
   network: string;
   destination_address: string;
@@ -70,7 +70,7 @@ export interface Withdrawal {
 }
 
 export interface InvestmentPlan {
-  id: number;
+  id: string | number;
   name: string;
   slug: string;
   tagline?: string;
@@ -88,9 +88,9 @@ export interface InvestmentPlan {
 }
 
 export interface InvestmentPosition {
-  id: number;
-  user_id: number;
-  plan_id: number;
+  id: string | number;
+  user_id: string | number;
+  plan_id: string | number;
   plan_name: string;
   duration_days: number;
   risk_tier: string;
@@ -106,8 +106,8 @@ export interface InvestmentPosition {
 }
 
 export interface KYCRecord {
-  id: number;
-  user_id: number;
+  id: string | number;
+  user_id: string | number;
   full_legal_name: string;
   date_of_birth: string;
   residential_address: string;
@@ -143,7 +143,7 @@ export interface CryptoMarketCoin {
 }
 
 export interface NotificationItem {
-  id: number;
+  id: string | number;
   title: string;
   message: string;
   type: 'success' | 'warning' | 'info' | 'security';
@@ -153,7 +153,8 @@ export interface NotificationItem {
 }
 
 export interface SupportTicket {
-  id: number;
+  id: string | number;
+  user_id?: string;
   ticket_code: string;
   subject: string;
   category: string;
@@ -167,8 +168,8 @@ export interface SupportTicket {
 }
 
 export interface SupportMessage {
-  id: number;
-  ticket_id: number;
+  id: string | number;
+  ticket_id: string | number;
   sender_role: 'user' | 'admin';
   sender_name: string;
   message: string;
@@ -176,8 +177,8 @@ export interface SupportMessage {
 }
 
 export interface AdminAuditLog {
-  id: number;
-  admin_id: number;
+  id: string | number;
+  admin_id: string | number;
   admin_email: string;
   action: string;
   target_type: string;

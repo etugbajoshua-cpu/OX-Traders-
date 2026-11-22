@@ -1,5 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
+  adjustUserBalance,
+  getAdminUserDetail,
+  getAdminUsers,
+  sendUserNotification,
+  updateAdminUserStatus,
+} from '../../lib/firestoreService.ts';
+import {
   Search,
   CheckCircle2,
   AlertTriangle,
@@ -15,6 +22,15 @@ export const AdminUsersPage: React.FC = () => {
 
   // Selected User Full Profile Drawer/Modal
   const [selectedUser, setSelectedUser] = useState<any | null>(null);
+
+  // Status Change Confirmation Modal
+  const [statusModal, setStatusModal] = useState<{
+    uid: string;
+    name: string;
+    nextStatus: 'active' | 'restricted' | 'suspended';
+  } | null>(null);
+  const [statusReason, setStatusReason] = useState('Administrative policy compliance');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   // Balance Adjustment Modal State
   const [adjustModalUser, setAdjustModalUser] = useState<any | null>(null);
@@ -34,15 +50,11 @@ export const AdminUsersPage: React.FC = () => {
   const fetchUsers = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (searchTerm) params.append('search', searchTerm);
-      if (statusFilter) params.append('status', statusFilter);
-
-      const res = await fetch(`/api/admin/users?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setUsers(data.users || []);
-      }
+      const list = await getAdminUsers({
+        search: searchTerm || undefined,
+        status: statusFilter || undefined,
+      });
+      setUsers(list);
     } catch (err) {
       console.error('Failed to load users:', err);
     } finally {
@@ -54,37 +66,35 @@ export const AdminUsersPage: React.FC = () => {
     fetchUsers();
   }, [searchTerm, statusFilter]);
 
-  const viewUserProfile = async (userId: number) => {
+  const viewUserProfile = async (userId: string) => {
     try {
-      const res = await fetch(`/api/admin/users/${userId}`);
-      if (res.ok) {
-        const data = await res.json();
-        setSelectedUser(data);
-      }
+      const data = await getAdminUserDetail(userId);
+      setSelectedUser(data);
     } catch (err) {
       console.error('Failed to load user profile detail:', err);
     }
   };
 
-  const handleUpdateStatus = async (userId: number, newStatus: string) => {
+  const handleConfirmStatusUpdate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!statusModal) return;
+    setUpdatingStatus(true);
     try {
-      const reason = prompt(`Enter compliance reason for setting account to ${newStatus.toUpperCase()}:`, 'Administrative policy compliance');
-      if (reason === null) return;
-
-      const res = await fetch(`/api/admin/users/${userId}/status`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus, reason })
-      });
-
-      if (res.ok) {
-        await fetchUsers();
-        if (selectedUser?.user?.id === userId) {
-          await viewUserProfile(userId);
-        }
+      await updateAdminUserStatus(
+        statusModal.uid,
+        statusModal.nextStatus,
+        statusReason.trim() || 'Administrative compliance review'
+      );
+      const uid = statusModal.uid;
+      setStatusModal(null);
+      await fetchUsers();
+      if (selectedUser?.user?.id === uid) {
+        await viewUserProfile(uid);
       }
     } catch (err) {
       console.error('Failed to update user status:', err);
+    } finally {
+      setUpdatingStatus(false);
     }
   };
 
@@ -96,35 +106,27 @@ export const AdminUsersPage: React.FC = () => {
     setAdjustMsg(null);
 
     try {
-      const res = await fetch(`/api/admin/users/${adjustModalUser.id}/balance-adjust`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currency: adjustCurrency,
-          type: adjustType,
-          amount: parseFloat(adjustAmount),
-          reason: adjustReason.trim()
-        })
+      const data = await adjustUserBalance({
+        uid: String(adjustModalUser.id),
+        currency: adjustCurrency,
+        type: adjustType,
+        amount: parseFloat(adjustAmount),
+        reason: adjustReason.trim(),
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setAdjustMsg({ type: 'error', text: data.error || 'Adjustment failed' });
-      } else {
-        setAdjustMsg({
-          type: 'success',
-          text: `Adjustment executed successfully. Transaction Ref: ${data.ref}`
-        });
-        setAdjustAmount('');
-        setAdjustReason('');
-        await fetchUsers();
-        if (selectedUser?.user?.id === adjustModalUser.id) {
-          await viewUserProfile(adjustModalUser.id);
-        }
-        setTimeout(() => setAdjustModalUser(null), 1800);
+      setAdjustMsg({
+        type: 'success',
+        text: `Adjustment executed successfully. Transaction Ref: ${data.ref}`
+      });
+      setAdjustAmount('');
+      setAdjustReason('');
+      await fetchUsers();
+      if (selectedUser?.user?.id === adjustModalUser.id) {
+        await viewUserProfile(String(adjustModalUser.id));
       }
+      setTimeout(() => setAdjustModalUser(null), 1500);
     } catch (err: any) {
-      setAdjustMsg({ type: 'error', text: err.message || 'Error occurred' });
+      setAdjustMsg({ type: 'error', text: err?.message || 'Adjustment failed' });
     } finally {
       setSubmittingAdjust(false);
     }
@@ -136,21 +138,15 @@ export const AdminUsersPage: React.FC = () => {
 
     setSendingNotify(true);
     try {
-      const res = await fetch(`/api/admin/users/${notifyModalUser.id}/notify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: notifyTitle.trim(),
-          message: notifyBody.trim(),
-          type: 'info'
-        })
+      await sendUserNotification({
+        uid: String(notifyModalUser.id),
+        title: notifyTitle.trim(),
+        message: notifyBody.trim(),
+        type: 'info',
       });
-
-      if (res.ok) {
-        setNotifyModalUser(null);
-        setNotifyTitle('');
-        setNotifyBody('');
-      }
+      setNotifyModalUser(null);
+      setNotifyTitle('');
+      setNotifyBody('');
     } catch (err) {
       console.error('Failed to send notification:', err);
     } finally {
@@ -237,7 +233,7 @@ export const AdminUsersPage: React.FC = () => {
                     <td className="py-3.5 px-4 font-sans">
                       <div className="font-bold text-white flex items-center gap-1.5">
                         <span>{u.full_name}</span>
-                        <span className="text-[10px] text-[#848E9C] font-mono">#{u.id}</span>
+                        <span className="text-[10px] text-[#848E9C] font-mono">#{String(u.id).slice(0, 8)}</span>
                       </div>
                       <div className="text-[#848E9C] text-[11px] font-mono">{u.email}</div>
                       <div className="text-[#5E6673] text-[10px]">{u.country}</div>
@@ -364,7 +360,14 @@ export const AdminUsersPage: React.FC = () => {
               <div className="flex flex-wrap gap-2">
                 {selectedUser.user.status !== 'active' && (
                   <button
-                    onClick={() => handleUpdateStatus(selectedUser.user.id, 'active')}
+                    onClick={() => {
+                      setStatusReason('Administrative compliance restoration');
+                      setStatusModal({
+                        uid: String(selectedUser.user.id),
+                        name: selectedUser.user.full_name,
+                        nextStatus: 'active',
+                      });
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-[#0ECB81] hover:bg-[#0ECB81]/90 text-black font-bold text-xs uppercase cursor-pointer"
                   >
                     Activate
@@ -372,7 +375,14 @@ export const AdminUsersPage: React.FC = () => {
                 )}
                 {selectedUser.user.status !== 'restricted' && (
                   <button
-                    onClick={() => handleUpdateStatus(selectedUser.user.id, 'restricted')}
+                    onClick={() => {
+                      setStatusReason('Compliance verification hold');
+                      setStatusModal({
+                        uid: String(selectedUser.user.id),
+                        name: selectedUser.user.full_name,
+                        nextStatus: 'restricted',
+                      });
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-[#F0B90B]/15 text-[#F0B90B] border border-[#F0B90B]/30 text-xs font-semibold cursor-pointer"
                   >
                     Restrict
@@ -380,7 +390,14 @@ export const AdminUsersPage: React.FC = () => {
                 )}
                 {selectedUser.user.status !== 'suspended' && (
                   <button
-                    onClick={() => handleUpdateStatus(selectedUser.user.id, 'suspended')}
+                    onClick={() => {
+                      setStatusReason('Administrative policy suspension');
+                      setStatusModal({
+                        uid: String(selectedUser.user.id),
+                        name: selectedUser.user.full_name,
+                        nextStatus: 'suspended',
+                      });
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-[#F6465D]/15 text-[#F6465D] border border-[#F6465D]/30 text-xs font-semibold cursor-pointer"
                   >
                     Suspend
@@ -593,6 +610,56 @@ export const AdminUsersPage: React.FC = () => {
                   className="flex-1 py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-black font-bold text-xs uppercase tracking-wider cursor-pointer"
                 >
                   {sendingNotify ? 'Sending...' : 'Deliver Notification'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Account Status Confirmation Modal */}
+      {statusModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setStatusModal(null)}
+              className="absolute top-4 right-4 p-1 text-[#848E9C] hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-base font-bold text-white mb-1">
+              Set Status: {statusModal.nextStatus.toUpperCase()}
+            </h3>
+            <p className="text-xs text-[#848E9C] mb-4">
+              Update access permissions for {statusModal.name} and record reason in audit log.
+            </p>
+            <form onSubmit={handleConfirmStatusUpdate} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#848E9C] mb-1">
+                  Compliance Reason *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={statusReason}
+                  onChange={(e) => setStatusReason(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-white text-xs focus:outline-none focus:border-[#F0B90B] resize-none"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setStatusModal(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-[#848E9C] hover:text-white text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={updatingStatus}
+                  className="flex-1 py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-black font-bold text-xs uppercase tracking-wider cursor-pointer"
+                >
+                  {updatingStatus ? 'Updating...' : 'Confirm Status'}
                 </button>
               </div>
             </form>

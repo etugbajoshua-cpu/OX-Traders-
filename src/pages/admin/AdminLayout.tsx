@@ -92,10 +92,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               <button
                 key={item.id}
                 onClick={() => handleSelect(item.id)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                   isActive
-                    ? 'bg-[#1E2329] text-[#F0B90B] border-l-4 border-l-[#F0B90B]'
-                    : 'text-[#848E9C] hover:text-white hover:bg-[#1E2329]/60'
+                    ? 'bg-[#F0B90B]/12 text-[#F0B90B] border border-[#F0B90B]/30'
+                    : 'text-[#848E9C] border border-transparent hover:text-white hover:bg-[#1E2329]/60'
                 }`}
               >
                 <Icon className={`w-4 h-4 ${isActive ? 'text-[#F0B90B]' : 'text-[#848E9C]'}`} />
@@ -190,8 +190,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
                     onClick={() => handleSelect(item.id)}
                     className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-semibold min-h-[44px] ${
                       isActive
-                        ? 'bg-[#1E2329] text-[#F0B90B] font-bold border-l-4 border-l-[#F0B90B]'
-                        : 'text-[#848E9C] hover:text-white hover:bg-[#1E2329]/60'
+                        ? 'bg-[#F0B90B]/12 text-[#F0B90B] font-bold border border-[#F0B90B]/30'
+                        : 'text-[#848E9C] border border-transparent hover:text-white hover:bg-[#1E2329]/60'
                     }`}
                   >
                     <Icon className="w-4 h-4" />

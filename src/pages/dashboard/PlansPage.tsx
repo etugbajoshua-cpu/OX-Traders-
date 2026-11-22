@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { InvestmentPlan } from '../../types/index.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { createInvestment, getActivePlans } from '../../lib/firestoreService.ts';
 import {
   Check,
   Clock,
@@ -16,7 +17,7 @@ interface PlansPageProps {
 }
 
 export const PlansPage: React.FC<PlansPageProps> = ({ onNavigateSection }) => {
-  const { balances, refreshProfile } = useAuth();
+  const { firebaseUser, balances, refreshProfile } = useAuth();
   const [plans, setPlans] = useState<InvestmentPlan[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -29,9 +30,8 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onNavigateSection }) => {
   const availableUSD = balances.USD?.available || 0;
 
   useEffect(() => {
-    fetch('/api/investments/plans')
-      .then((res) => res.json())
-      .then((data) => setPlans(data.plans || []))
+    getActivePlans()
+      .then((list) => setPlans(list))
       .catch((err) => console.error('Failed to load plans:', err))
       .finally(() => setLoading(false));
   }, []);
@@ -44,7 +44,7 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onNavigateSection }) => {
 
   const handleExecuteInvest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedPlan) return;
+    if (!selectedPlan || !firebaseUser) return;
 
     const num = parseFloat(investAmount);
     if (isNaN(num) || num < selectedPlan.min_amount || num > selectedPlan.max_amount) {
@@ -67,32 +67,22 @@ export const PlansPage: React.FC<PlansPageProps> = ({ onNavigateSection }) => {
     setStatusMsg(null);
 
     try {
-      const res = await fetch('/api/investments/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          plan_id: selectedPlan.id,
-          amount: num,
-          currency: 'USD'
-        })
+      await createInvestment({
+        uid: firebaseUser.uid,
+        plan: selectedPlan,
+        amount: num
       });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setStatusMsg({ type: 'error', text: data.error || 'Failed to allocate investment' });
-      } else {
-        setStatusMsg({
-          type: 'success',
-          text: `Successfully allocated $${num.toLocaleString()} to ${selectedPlan.name}! Daily accruals will begin automatically.`
-        });
-        await refreshProfile();
-        setTimeout(() => {
-          setSelectedPlan(null);
-          onNavigateSection('investments');
-        }, 1800);
-      }
+      setStatusMsg({
+        type: 'success',
+        text: `Successfully allocated $${num.toLocaleString()} to ${selectedPlan.name}! Daily accruals will begin automatically.`
+      });
+      await refreshProfile();
+      setTimeout(() => {
+        setSelectedPlan(null);
+        onNavigateSection('investments');
+      }, 1500);
     } catch (err: any) {
-      setStatusMsg({ type: 'error', text: err.message || 'Connection error' });
+      setStatusMsg({ type: 'error', text: err.message || 'Failed to allocate investment' });
     } finally {
       setSubmitting(false);
     }

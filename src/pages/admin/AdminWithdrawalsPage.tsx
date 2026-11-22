@@ -1,6 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { Withdrawal } from '../../types/index.ts';
 import {
+  approveWithdrawal,
+  completeWithdrawal,
+  getAdminWithdrawals,
+  rejectWithdrawal,
+} from '../../lib/firestoreService.ts';
+import {
   ExternalLink,
   RefreshCw,
   X
@@ -10,21 +16,21 @@ export const AdminWithdrawalsPage: React.FC = () => {
   const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [actionProcessing, setActionProcessing] = useState<number | null>(null);
+  const [actionProcessing, setActionProcessing] = useState<string | number | null>(null);
 
   // Modal to complete withdrawal with blockchain payout TxID
   const [completeModalWth, setCompleteModalWth] = useState<Withdrawal | null>(null);
   const [payoutTxHash, setPayoutTxHash] = useState('');
 
+  // Modal to reject withdrawal & refund balance
+  const [rejectModalWth, setRejectModalWth] = useState<Withdrawal | null>(null);
+  const [rejectReason, setRejectReason] = useState('Address format mismatch or compliance flag');
+
   const fetchWithdrawals = async () => {
     try {
       setLoading(true);
-      const url = statusFilter ? `/api/admin/withdrawals?status=${statusFilter}` : '/api/admin/withdrawals';
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setWithdrawals(data.withdrawals || []);
-      }
+      const list = await getAdminWithdrawals(statusFilter || undefined);
+      setWithdrawals(list);
     } catch (err) {
       console.error('Failed to load withdrawals:', err);
     } finally {
@@ -36,13 +42,11 @@ export const AdminWithdrawalsPage: React.FC = () => {
     fetchWithdrawals();
   }, [statusFilter]);
 
-  const handleApprove = async (id: number) => {
+  const handleApprove = async (id: string | number) => {
     setActionProcessing(id);
     try {
-      const res = await fetch(`/api/admin/withdrawals/${id}/approve`, { method: 'POST' });
-      if (res.ok) {
-        await fetchWithdrawals();
-      }
+      await approveWithdrawal(String(id));
+      await fetchWithdrawals();
     } catch (err) {
       console.error(err);
     } finally {
@@ -56,17 +60,10 @@ export const AdminWithdrawalsPage: React.FC = () => {
 
     setActionProcessing(completeModalWth.id);
     try {
-      const res = await fetch(`/api/admin/withdrawals/${completeModalWth.id}/complete`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ payout_tx_hash: payoutTxHash.trim() })
-      });
-
-      if (res.ok) {
-        setCompleteModalWth(null);
-        setPayoutTxHash('');
-        await fetchWithdrawals();
-      }
+      await completeWithdrawal(String(completeModalWth.id), payoutTxHash.trim());
+      setCompleteModalWth(null);
+      setPayoutTxHash('');
+      await fetchWithdrawals();
     } catch (err) {
       console.error(err);
     } finally {
@@ -74,20 +71,18 @@ export const AdminWithdrawalsPage: React.FC = () => {
     }
   };
 
-  const handleReject = async (id: number) => {
-    const reason = prompt('Enter rejection reason for this withdrawal. The locked balance will be automatically refunded to the user wallet:', 'Address format mismatch or compliance flag');
-    if (reason === null) return;
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectModalWth) return;
 
-    setActionProcessing(id);
+    setActionProcessing(rejectModalWth.id);
     try {
-      const res = await fetch(`/api/admin/withdrawals/${id}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
-      });
-      if (res.ok) {
-        await fetchWithdrawals();
-      }
+      await rejectWithdrawal(
+        String(rejectModalWth.id),
+        rejectReason.trim() || 'Compliance hold - funds returned to available balance'
+      );
+      setRejectModalWth(null);
+      await fetchWithdrawals();
     } catch (err) {
       console.error(err);
     } finally {
@@ -237,7 +232,10 @@ export const AdminWithdrawalsPage: React.FC = () => {
                             </button>
 
                             <button
-                              onClick={() => handleReject(wth.id)}
+                              onClick={() => {
+                                setRejectReason('Address format mismatch or compliance flag');
+                                setRejectModalWth(wth);
+                              }}
                               disabled={actionProcessing === wth.id}
                               className="px-2.5 py-1.5 rounded-lg bg-[#F6465D]/10 hover:bg-[#F6465D]/20 text-[#F6465D] border border-[#F6465D]/30 font-semibold text-xs cursor-pointer"
                             >
@@ -303,6 +301,49 @@ export const AdminWithdrawalsPage: React.FC = () => {
                   className="flex-1 py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-black font-bold text-xs uppercase tracking-wider cursor-pointer"
                 >
                   {actionProcessing === completeModalWth.id ? 'Processing...' : 'Mark Completed'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Reject & Refund Modal */}
+      {rejectModalWth && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setRejectModalWth(null)}
+              className="absolute top-4 right-4 p-1 text-[#848E9C] hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-lg font-bold text-white mb-1">Reject Withdrawal &amp; Refund Balance</h3>
+            <p className="text-xs text-[#848E9C] mb-4">
+              Locked balance ({rejectModalWth.amount} {rejectModalWth.currency}) will be returned to the investor&apos;s available wallet.
+            </p>
+            <form onSubmit={handleConfirmReject} className="space-y-4">
+              <textarea
+                rows={3}
+                required
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-white text-xs focus:outline-none focus:border-[#F0B90B] resize-none"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalWth(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-[#848E9C] hover:text-white text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionProcessing === rejectModalWth.id}
+                  className="flex-1 py-2.5 rounded-xl bg-[#F6465D] hover:bg-[#F6465D]/90 text-white font-bold text-xs uppercase tracking-wider cursor-pointer"
+                >
+                  {actionProcessing === rejectModalWth.id ? 'Refunding...' : 'Reject & Refund'}
                 </button>
               </div>
             </form>

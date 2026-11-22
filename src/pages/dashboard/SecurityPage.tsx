@@ -1,57 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { KeyRound, CheckCircle2, AlertCircle, Smartphone } from 'lucide-react';
+import { ShieldCheck, CheckCircle2, Smartphone, Lock, KeyRound } from 'lucide-react';
 
 export const SecurityPage: React.FC = () => {
-  const { user, toggle2FA } = useAuth();
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmNewPassword, setConfirmNewPassword] = useState('');
-  const [submittingPass, setSubmittingPass] = useState(false);
-  const [passNotice, setPassNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-
+  const { user, firebaseUser, toggle2FA } = useAuth();
   const [toggling2FA, setToggling2FA] = useState(false);
   const [twoFaNotice, setTwoFaNotice] = useState<string | null>(null);
-
-  const handlePasswordChange = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword !== confirmNewPassword) {
-      setPassNotice({ type: 'error', text: 'New passwords do not match' });
-      return;
-    }
-    if (newPassword.length < 8) {
-      setPassNotice({ type: 'error', text: 'Password must be at least 8 characters' });
-      return;
-    }
-
-    setSubmittingPass(true);
-    setPassNotice(null);
-
-    try {
-      const res = await fetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          current_password: currentPassword,
-          new_password: newPassword
-        })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        setPassNotice({ type: 'error', text: data.error || 'Password update failed' });
-      } else {
-        setPassNotice({ type: 'success', text: 'Password updated successfully' });
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmNewPassword('');
-      }
-    } catch (err: any) {
-      setPassNotice({ type: 'error', text: err.message || 'Connection error' });
-    } finally {
-      setSubmittingPass(false);
-    }
-  };
 
   const handleToggle2FA = async () => {
     setToggling2FA(true);
@@ -70,7 +24,7 @@ export const SecurityPage: React.FC = () => {
           Security Settings
         </h2>
         <p className="text-xs text-[#848E9C] mt-1">
-          Manage your credentials, two-factor authentication, and active protections.
+          Manage your cryptographic identity protection, two-factor authentication, and session safeguards.
         </p>
       </div>
 
@@ -92,7 +46,7 @@ export const SecurityPage: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-[#848E9C] mt-1 max-w-md">
-              Enforce time-based one-time password (TOTP) verification for all logins and withdrawals.
+              Require an additional compliance confirmation step for account withdrawals and custody changes.
             </p>
             {twoFaNotice && (
               <div className="text-xs font-semibold text-[#0ECB81] mt-2 flex items-center gap-1.5">
@@ -112,88 +66,55 @@ export const SecurityPage: React.FC = () => {
               : 'bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] shadow-md'
           }`}
         >
-          {user?.two_factor_enabled ? 'Disable 2FA' : 'Enable 2FA'}
+          {toggling2FA ? 'Updating...' : user?.two_factor_enabled ? 'Disable 2FA' : 'Enable 2FA'}
         </button>
       </div>
 
-      {/* Password Change Form */}
-      <div className="p-5 sm:p-8 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl">
-        <h3 className="text-base font-bold text-white mb-1 flex items-center gap-2">
-          <KeyRound className="w-4 h-4 text-[#F0B90B]" />
-          <span>Update Account Password</span>
-        </h3>
-        <p className="text-xs text-[#848E9C] mb-6">
-          Choose a strong password containing at least 8 characters with numbers and symbols.
-        </p>
-
-        {passNotice && (
-          <div
-            className={`mb-4 p-3.5 rounded-xl text-xs flex items-center gap-2.5 ${
-              passNotice.type === 'success'
-                ? 'bg-[#0ECB81]/10 border border-[#0ECB81]/30 text-[#0ECB81]'
-                : 'bg-[#F6465D]/10 border border-[#F6465D]/30 text-[#F6465D]'
-            }`}
-          >
-            {passNotice.type === 'success' ? (
-              <CheckCircle2 className="w-4 h-4 shrink-0" />
-            ) : (
-              <AlertCircle className="w-4 h-4 shrink-0" />
-            )}
-            <span>{passNotice.text}</span>
-          </div>
-        )}
-
-        <form onSubmit={handlePasswordChange} className="space-y-4 max-w-md">
-          <div>
-            <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-              Current Password *
-            </label>
-            <input
-              type="password"
-              required
-              value={currentPassword}
-              onChange={(e) => setCurrentPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B]"
-            />
+      {/* Google Cryptographic Identity & Session Security */}
+      <div className="p-5 sm:p-8 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl space-y-5">
+        <div className="flex items-center justify-between gap-4 pb-4 border-b border-[#2B313A]">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-[#0ECB81]/15 text-[#0ECB81] flex items-center justify-center shrink-0">
+              <KeyRound className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-white">Google Cryptographic Identity Protection</h3>
+              <p className="text-xs text-[#848E9C]">
+                Your investor vault is secured directly through Google OAuth 2.0 &amp; Firebase hardware-backed tokens.
+              </p>
+            </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-              New Password *
-            </label>
-            <input
-              type="password"
-              required
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B]"
-            />
+          <span className="px-2.5 py-1 rounded-md bg-[#0ECB81]/15 text-[#0ECB81] text-[11px] font-bold uppercase tracking-wider shrink-0">
+            Verified Session
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div className="p-4 rounded-xl bg-[#1E2329] border border-[#2B313A]">
+            <div className="text-[#848E9C] uppercase text-[10px] font-semibold tracking-wider mb-1">
+              Linked Identity Email
+            </div>
+            <div className="text-white font-mono font-bold truncate">{user?.email || firebaseUser?.email}</div>
           </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-              Confirm New Password *
-            </label>
-            <input
-              type="password"
-              required
-              value={confirmNewPassword}
-              onChange={(e) => setConfirmNewPassword(e.target.value)}
-              placeholder="••••••••••••"
-              className="w-full px-3.5 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B]"
-            />
+          <div className="p-4 rounded-xl bg-[#1E2329] border border-[#2B313A]">
+            <div className="text-[#848E9C] uppercase text-[10px] font-semibold tracking-wider mb-1">
+              Authentication Provider
+            </div>
+            <div className="text-[#0ECB81] font-bold flex items-center gap-1.5">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Google Identity (Phishing-Resistant OAuth)</span>
+            </div>
           </div>
+        </div>
 
-          <button
-            type="submit"
-            disabled={submittingPass}
-            className="px-6 py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer shadow-md"
-          >
-            {submittingPass ? 'Updating...' : 'Save Password'}
-          </button>
-        </form>
+        <div className="p-4 rounded-xl bg-[#0B0E11] border border-[#2B313A] flex items-start gap-3 text-xs text-[#848E9C]">
+          <Lock className="w-4 h-4 text-[#F0B90B] shrink-0 mt-0.5" />
+          <p>
+            Because OX TRADERS delegates credential authentication directly to Google Identity Services, password resets, recovery keys, and passkey security are managed centrally in your Google Account Security settings.
+          </p>
+        </div>
       </div>
     </div>
   );

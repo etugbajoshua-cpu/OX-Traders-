@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { InvestmentPlan } from '../../types/index.ts';
+import { getAdminPlans, saveAdminPlan } from '../../lib/firestoreService.ts';
 import { Plus, X } from 'lucide-react';
 
 export const AdminPlansPage: React.FC = () => {
@@ -11,11 +12,8 @@ export const AdminPlansPage: React.FC = () => {
   const fetchPlans = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/plans');
-      if (res.ok) {
-        const data = await res.json();
-        setPlans(data.plans || []);
-      }
+      const list = await getAdminPlans();
+      setPlans(list);
     } catch (err) {
       console.error('Failed to load plans:', err);
     } finally {
@@ -33,16 +31,9 @@ export const AdminPlansPage: React.FC = () => {
 
     setSubmitting(true);
     try {
-      const res = await fetch('/api/admin/plans', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingPlan)
-      });
-
-      if (res.ok) {
-        setEditingPlan(null);
-        await fetchPlans();
-      }
+      await saveAdminPlan(editingPlan);
+      setEditingPlan(null);
+      await fetchPlans();
     } catch (err) {
       console.error(err);
     } finally {

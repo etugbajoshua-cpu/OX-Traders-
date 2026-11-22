@@ -35,10 +35,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   activeSection,
   onNavigateSection,
   onNavigateHome,
-  unreadNotifications = 0,
+  unreadNotifications: propUnread,
   children
 }) => {
-  const { user, balances, logout } = useAuth();
+  const { user, balances, unreadNotifications: authUnread, logout } = useAuth();
+  const unreadNotifications = propUnread ?? authUnread;
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const menuItems = [
@@ -105,10 +106,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
               <button
                 key={item.id}
                 onClick={() => handleSelect(item.id)}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
                   isActive
-                    ? 'bg-[#1E2329] text-[#F0B90B] border-l-4 border-l-[#F0B90B]'
-                    : 'text-[#848E9C] hover:text-white hover:bg-[#1E2329]/60'
+                    ? 'bg-[#F0B90B]/12 text-[#F0B90B] border border-[#F0B90B]/30'
+                    : 'text-[#848E9C] border border-transparent hover:text-white hover:bg-[#1E2329]/60'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -174,7 +175,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
           {/* Balance Pills & User Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Quick Balance Summary */}
-            <div className="hidden md:flex items-center gap-1.5 p-1 rounded-xl bg-[#1E2329] border border-[#2B313A] text-xs font-mono">
+            <div className="hidden md:flex items-center gap-1.5 p-1 rounded-xl bg-[#1E2329] border border-[#2B313A] text-xs font-mono tabular-nums">
               <div className="px-2 py-0.5 rounded-lg text-white flex items-center gap-1">
                 <span className="text-[#0ECB81] font-bold">$</span>
                 <span>{(balances.USD?.available || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -309,8 +310,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({
                     onClick={() => handleSelect(item.id)}
                     className={`w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-xs font-semibold min-h-[44px] ${
                       isActive
-                        ? 'bg-[#1E2329] text-[#F0B90B] font-bold border-l-4 border-l-[#F0B90B]'
-                        : 'text-[#848E9C] hover:text-white hover:bg-[#1E2329]/60'
+                        ? 'bg-[#F0B90B]/12 text-[#F0B90B] font-bold border border-[#F0B90B]/30'
+                        : 'text-[#848E9C] border border-transparent hover:text-white hover:bg-[#1E2329]/60'
                     }`}
                   >
                     <div className="flex items-center gap-3">

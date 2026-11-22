@@ -1,7 +1,10 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import { auth, googleProvider, MASTER_ADMIN_EMAIL } from '../lib/firebase.ts';
+import { verifyAdminAccess } from '../lib/firestoreService.ts';
 
 interface AdminUser {
-  id: number;
+  id: string;
   email: string;
   full_name: string;
   role: 'admin';
@@ -10,7 +13,7 @@ interface AdminUser {
 interface AdminAuthContextType {
   admin: AdminUser | null;
   loading: boolean;
-  adminLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  adminLoginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
   adminLogout: () => Promise<void>;
   checkAdminSession: () => Promise<boolean>;
 }
@@ -21,64 +24,77 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [admin, setAdmin] = useState<AdminUser | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
 
-  const checkAdminSession = async (): Promise<boolean> => {
+  const evaluateFirebaseAdmin = useCallback(async (fbUser: typeof auth.currentUser): Promise<boolean> => {
+    if (!fbUser) {
+      setAdmin(null);
+      return false;
+    }
+
     try {
-      const res = await fetch('/api/admin/metrics');
-      if (res.ok) {
-        // Active admin session verified
-        const storedAdmin = localStorage.getItem('ox_admin_user');
-        if (storedAdmin) {
-          setAdmin(JSON.parse(storedAdmin));
-        } else {
-          setAdmin({ id: 1, email: 'admin@oxtraders.com', full_name: 'OX TRADERS Master Admin', role: 'admin' });
-        }
+      const authorized = await verifyAdminAccess(fbUser);
+      if (authorized) {
+        setAdmin({
+          id: fbUser.uid,
+          email: fbUser.email || MASTER_ADMIN_EMAIL,
+          full_name: fbUser.displayName || 'OX TRADERS Master Admin',
+          role: 'admin',
+        });
         return true;
-      } else {
-        setAdmin(null);
-        localStorage.removeItem('ox_admin_user');
-        return false;
       }
+      setAdmin(null);
+      return false;
     } catch {
       setAdmin(null);
       return false;
-    } finally {
-      setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    checkAdminSession();
   }, []);
 
-  const adminLogin = async (email: string, password: string) => {
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (fbUser) => {
+      await evaluateFirebaseAdmin(fbUser);
+      setLoading(false);
+    });
+    return () => unsub();
+  }, [evaluateFirebaseAdmin]);
+
+  const checkAdminSession = async (): Promise<boolean> => {
+    return evaluateFirebaseAdmin(auth.currentUser);
+  };
+
+  const adminLoginWithGoogle = async () => {
     try {
-      const res = await fetch('/api/admin/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        return { success: false, error: data.error || 'Invalid administrator credentials' };
+      const cred = await signInWithPopup(auth, googleProvider);
+      const authorized = await evaluateFirebaseAdmin(cred.user);
+      if (!authorized) {
+        await signOut(auth);
+        return {
+          success: false,
+          error: `Access denied: ${cred.user.email || 'this Google account'} is not authorized for OX Control Center.`,
+        };
       }
-
-      setAdmin(data.admin);
-      localStorage.setItem('ox_admin_user', JSON.stringify(data.admin));
       return { success: true };
     } catch (err: any) {
-      return { success: false, error: err.message || 'Connection error' };
+      const code = String(err?.code || '');
+      if (code === 'auth/popup-closed-by-user') {
+        return { success: false, error: 'Google verification popup closed before completion.' };
+      }
+      if (code === 'auth/unauthorized-domain') {
+        return {
+          success: false,
+          error: `Domain "${window.location.hostname}" must be added under Firebase Console -> Authentication -> Settings -> Authorized domains.`,
+        };
+      }
+      return { success: false, error: err?.message || 'Operator verification failed.' };
     }
   };
 
   const adminLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await signOut(auth);
     } catch (err) {
-      console.error('Admin logout error:', err);
+      console.error('Admin sign out error:', err);
     } finally {
       setAdmin(null);
-      localStorage.removeItem('ox_admin_user');
     }
   };
 
@@ -87,9 +103,9 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       value={{
         admin,
         loading,
-        adminLogin,
+        adminLoginWithGoogle,
         adminLogout,
-        checkAdminSession
+        checkAdminSession,
       }}
     >
       {children}

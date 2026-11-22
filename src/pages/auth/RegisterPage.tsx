@@ -1,93 +1,102 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { Logo } from '../../components/common/Logo.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { User, Mail, Phone, Globe, Lock, ShieldCheck, ArrowRight, AlertCircle, Gift } from 'lucide-react';
+import { Phone, Globe, ShieldCheck, ArrowRight, AlertCircle, Gift } from 'lucide-react';
 
 interface RegisterPageProps {
   onNavigate: (route: string) => void;
   initialReferralCode?: string;
 }
 
-export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialReferralCode = '' }) => {
-  const { register } = useAuth();
-  const [fullName, setFullName] = useState('');
-  const [email, setEmail] = useState('');
+export const RegisterPage: React.FC<RegisterPageProps> = ({
+  onNavigate,
+  initialReferralCode = '',
+}) => {
+  const { user, loginWithGoogle } = useAuth();
   const [phone, setPhone] = useState('');
   const [country, setCountry] = useState('United Kingdom');
-  const [password, setPassword] = useState('');
-  const [passwordConfirmation, setPasswordConfirmation] = useState('');
   const [referralCode, setReferralCode] = useState(initialReferralCode);
   const [agreeTerms, setAgreeTerms] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (user) {
+      onNavigate('dashboard');
+    }
+  }, [user, onNavigate]);
+
   const countries = [
-    'United Kingdom', 'Switzerland', 'United States', 'Germany', 'France',
-    'Canada', 'Australia', 'Singapore', 'United Arab Emirates', 'Japan',
-    'South Korea', 'Netherlands', 'Sweden', 'Norway', 'Austria', 'Other'
+    'United Kingdom',
+    'Switzerland',
+    'United States',
+    'Germany',
+    'France',
+    'Canada',
+    'Australia',
+    'Singapore',
+    'United Arab Emirates',
+    'Japan',
+    'South Korea',
+    'Netherlands',
+    'Sweden',
+    'Norway',
+    'Austria',
+    'Other',
   ];
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleGoogleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email || !password || !passwordConfirmation) {
-      setError('Please fill in all required registration fields');
-      return;
-    }
-
-    if (password !== passwordConfirmation) {
-      setError('Passwords do not match');
-      return;
-    }
-
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters long');
-      return;
-    }
-
     if (!agreeTerms) {
-      setError('Please accept the Terms of Service & AML Guidelines to proceed');
+      setError('Please accept the Terms of Service & AML Guidelines to proceed.');
       return;
     }
 
     setLoading(true);
     setError('');
 
-    const res = await register({
-      full_name: fullName,
-      email,
-      phone,
+    const res = await loginWithGoogle({
       country,
-      password,
-      password_confirmation: passwordConfirmation,
-      referral_code: referralCode
+      phone: phone.trim(),
+      referral_code: referralCode.trim().toUpperCase(),
     });
 
     setLoading(false);
 
     if (res.success) {
       onNavigate('dashboard');
-    } else {
-      setError(res.error || 'Registration failed');
+    } else if (res.error) {
+      setError(res.error);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#0B0E11] text-[#EAECEF] flex flex-col justify-center items-center px-4 py-8 sm:py-12 relative overflow-hidden">
-      {/* Brand Header */}
-      <div className="mb-6 sm:mb-8 text-center cursor-pointer select-none" onClick={() => onNavigate('home')}>
+      <div
+        className="mb-6 sm:mb-8 text-center cursor-pointer select-none"
+        onClick={() => onNavigate('home')}
+      >
         <Logo variant="default" size="lg" />
       </div>
 
-      <div className="w-full max-w-lg bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-lg bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 overflow-hidden"
+      >
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#F0B90B] to-transparent opacity-70" />
+
         <div className="mb-6">
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#F0B90B]/10 border border-[#F0B90B]/20 text-[#F0B90B] text-[10px] font-bold uppercase tracking-wider mb-2">
-            Instant Onboarding
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#F0B90B]/10 border border-[#F0B90B]/25 text-[#F0B90B] text-[10px] font-bold uppercase tracking-wider mb-2">
+            Instant Cloud Onboarding
           </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
             Create Personal Account
           </h2>
           <p className="text-xs text-[#848E9C] mt-1.5">
-            Register to deposit crypto, start quantitative yield plans, and trade.
+            Verify with Google to provision your permanent multi-currency wallet and quantitative yield access.
           </p>
         </div>
 
@@ -98,59 +107,7 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialR
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-              Full Legal Name *
-            </label>
-            <div className="relative">
-              <User className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-              <input
-                type="text"
-                required
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Eleanor Vance"
-                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-              />
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-                Email Address *
-              </label>
-              <div className="relative">
-                <Mail className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@domain.com"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-                Phone Number
-              </label>
-              <div className="relative">
-                <Phone className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-                <input
-                  type="tel"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+44 20 7946 0991"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-                />
-              </div>
-            </div>
-          </div>
-
+        <form onSubmit={handleGoogleRegister} autoComplete="off" className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-[#848E9C] mb-1">
@@ -164,7 +121,9 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialR
                   className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
                 >
                   {countries.map((c) => (
-                    <option key={c} value={c} className="bg-[#181A20]">{c}</option>
+                    <option key={c} value={c} className="bg-[#181A20]">
+                      {c}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -172,54 +131,36 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialR
 
             <div>
               <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-                Referral Code (Optional)
+                Phone Number (Optional)
               </label>
               <div className="relative">
-                <Gift className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
+                <Phone className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
                 <input
-                  type="text"
-                  value={referralCode}
-                  onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
-                  placeholder="OX-8942"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] font-mono transition-colors"
+                  type="tel"
+                  autoComplete="off"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+44 20 7946 0991"
+                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
                 />
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-                Password * (min 8 chars)
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-                <input
-                  type="password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create password"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-                Confirm Password *
-              </label>
-              <div className="relative">
-                <Lock className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-                <input
-                  type="password"
-                  required
-                  value={passwordConfirmation}
-                  onChange={(e) => setPasswordConfirmation(e.target.value)}
-                  placeholder="Confirm password"
-                  className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-                />
-              </div>
+          <div>
+            <label className="block text-xs font-semibold text-[#848E9C] mb-1">
+              Referral Code (Optional)
+            </label>
+            <div className="relative">
+              <Gift className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
+              <input
+                type="text"
+                autoComplete="off"
+                value={referralCode}
+                onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                placeholder="OX-8942"
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B] font-mono transition-colors"
+              />
             </div>
           </div>
 
@@ -239,14 +180,14 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialR
           <button
             type="submit"
             disabled={loading}
-            className="w-full mt-4 py-3.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-sm tracking-wide transition-all flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-md"
+            className="w-full mt-4 py-3.5 px-4 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-sm tracking-wide transition-all flex items-center justify-center gap-2.5 active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-lg"
           >
             {loading ? (
               <div className="w-4 h-4 border-2 border-[#0B0E11] border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
                 <ShieldCheck className="w-4 h-4" />
-                <span>Create Account</span>
+                <span>Create Account with Google</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
@@ -256,8 +197,9 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialR
         <div className="mt-6 pt-5 border-t border-[#2B313A] text-center text-xs text-[#848E9C]">
           <span>Already registered? </span>
           <button
+            type="button"
             onClick={() => onNavigate('login')}
-            className="text-[#F0B90B] font-bold hover:underline ml-1"
+            className="text-[#F0B90B] font-bold hover:underline ml-1 cursor-pointer"
           >
             Log In
           </button>
@@ -265,13 +207,14 @@ export const RegisterPage: React.FC<RegisterPageProps> = ({ onNavigate, initialR
 
         <div className="mt-4 text-center">
           <button
+            type="button"
             onClick={() => onNavigate('home')}
-            className="text-xs text-[#848E9C] hover:text-white transition-colors"
+            className="text-xs text-[#848E9C] hover:text-white transition-colors cursor-pointer"
           >
             &larr; Back to Homepage
           </button>
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 };

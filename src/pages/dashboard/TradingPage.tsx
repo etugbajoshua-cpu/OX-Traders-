@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { CheckCircle2, AlertCircle } from 'lucide-react';
 
@@ -10,15 +11,31 @@ export const TradingPage: React.FC = () => {
   const [orderAmount, setOrderAmount] = useState<string>('0.05');
   const [orderPrice, setOrderPrice] = useState<string>('91420.50');
   const [orderNotice, setOrderNotice] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [livePrices, setLivePrices] = useState<Record<'BTC/USDT' | 'ETH/USDT' | 'SOL/USDT', number>>({
+    'BTC/USDT': 91420.5,
+    'ETH/USDT': 3340.2,
+    'SOL/USDT': 215.8
+  });
 
-  const pairPrices = {
-    'BTC/USDT': 91420.50,
-    'ETH/USDT': 3340.20,
-    'SOL/USDT': 215.80
-  };
+  useEffect(() => {
+    fetch('/api/markets/live')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data?.coins) return;
+        const next = { ...livePrices };
+        for (const c of data.coins) {
+          if (c.symbol === 'BTC') next['BTC/USDT'] = Number(c.current_price || next['BTC/USDT']);
+          if (c.symbol === 'ETH') next['ETH/USDT'] = Number(c.current_price || next['ETH/USDT']);
+          if (c.symbol === 'SOL') next['SOL/USDT'] = Number(c.current_price || next['SOL/USDT']);
+        }
+        setLivePrices(next);
+      })
+      .catch(() => {});
+  }, []);
 
-  const currentPrice = pairPrices[selectedPair];
-  const totalValue = (parseFloat(orderAmount) || 0) * (orderType === 'market' ? currentPrice : (parseFloat(orderPrice) || currentPrice));
+  const currentPrice = livePrices[selectedPair];
+  const totalValue =
+    (parseFloat(orderAmount) || 0) * (orderType === 'market' ? currentPrice : parseFloat(orderPrice) || currentPrice);
 
   const handlePlaceOrder = (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,7 +47,7 @@ export const TradingPage: React.FC = () => {
 
     setOrderNotice({
       type: 'success',
-      text: `${side.toUpperCase()} order for ${num} ${selectedPair.split('/')[0]} placed successfully!`
+      text: `${side.toUpperCase()} order for ${num} ${selectedPair.split('/')[0]} submitted to execution desk.`
     });
     setTimeout(() => setOrderNotice(null), 4000);
   };
@@ -39,11 +56,9 @@ export const TradingPage: React.FC = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-            Trading Terminal
-          </h2>
+          <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">Trading Terminal</h2>
           <p className="text-xs text-[#848E9C] mt-1">
-            Low-latency order routing and aggregated market liquidity.
+            Low-latency order routing and aggregated market liquidity on oxtraders.online.
           </p>
         </div>
 
@@ -53,9 +68,9 @@ export const TradingPage: React.FC = () => {
               key={pair}
               onClick={() => {
                 setSelectedPair(pair);
-                setOrderPrice(String(pairPrices[pair]));
+                setOrderPrice(String(livePrices[pair]));
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-colors cursor-pointer ${
                 selectedPair === pair
                   ? 'bg-[#F0B90B] text-[#0B0E11] shadow-sm'
                   : 'text-[#848E9C] hover:text-white'
@@ -69,7 +84,7 @@ export const TradingPage: React.FC = () => {
 
       {orderNotice && (
         <div
-          className={`p-4 rounded-xl text-xs flex items-center gap-2.5 ${
+          className={`p-4 rounded-xl text-xs flex items-center gap-2.5 ox-reveal-in ${
             orderNotice.type === 'success'
               ? 'bg-[#0ECB81]/10 border border-[#0ECB81]/30 text-[#0ECB81]'
               : 'bg-[#F6465D]/10 border border-[#F6465D]/30 text-[#F6465D]'
@@ -87,20 +102,25 @@ export const TradingPage: React.FC = () => {
       {/* Terminal Workspace Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Live Vector Chart */}
-        <div className="lg:col-span-8 p-5 sm:p-6 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl flex flex-col justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32 }}
+          className="lg:col-span-8 p-5 sm:p-6 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl flex flex-col justify-between"
+        >
           <div>
             <div className="flex items-center justify-between pb-4 mb-4 border-b border-[#2B313A]">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 tabular-nums">
                 <span className="text-lg sm:text-xl font-black font-mono text-white">{selectedPair}</span>
                 <span className="text-xl sm:text-2xl font-black font-mono text-[#0ECB81]">
-                  ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  ${currentPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </span>
                 <span className="text-xs font-bold text-[#0ECB81] bg-[#0ECB81]/15 px-2 py-0.5 rounded font-mono">
                   +3.42%
                 </span>
               </div>
-              <div className="text-xs text-[#848E9C] font-mono hidden sm:block">
-                24h Vol: $38.4B
+              <div className="text-xs text-[#848E9C] font-mono tabular-nums hidden sm:block">
+                Avail USD: ${(balances.USD?.available || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </div>
             </div>
 
@@ -155,21 +175,26 @@ export const TradingPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-[#2B313A] text-xs text-[#848E9C] flex justify-between font-mono">
+          <div className="mt-4 pt-3 border-t border-[#2B313A] text-xs text-[#848E9C] flex justify-between font-mono tabular-nums">
             <span>RSI(14): 63.8 • EMA(20): ${(currentPrice * 0.98).toFixed(2)}</span>
             <span className="text-[#0ECB81]">Trading Online</span>
           </div>
-        </div>
+        </motion.div>
 
         {/* Right Column: Order Placement Form */}
-        <div className="lg:col-span-4 p-5 sm:p-6 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl flex flex-col justify-between">
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.32, delay: 0.06 }}
+          className="lg:col-span-4 p-5 sm:p-6 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl flex flex-col justify-between"
+        >
           <div>
             {/* Buy / Sell Tabs */}
             <div className="grid grid-cols-2 gap-2 mb-4 p-1 rounded-xl bg-[#1E2329] border border-[#2B313A]">
               <button
                 type="button"
                 onClick={() => setSide('buy')}
-                className={`py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                className={`py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
                   side === 'buy'
                     ? 'bg-[#0ECB81] text-[#0B0E11] shadow-sm'
                     : 'text-[#848E9C] hover:text-white'
@@ -180,7 +205,7 @@ export const TradingPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSide('sell')}
-                className={`py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                className={`py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-colors cursor-pointer ${
                   side === 'sell'
                     ? 'bg-[#F6465D] text-white shadow-sm'
                     : 'text-[#848E9C] hover:text-white'
@@ -196,9 +221,7 @@ export const TradingPage: React.FC = () => {
                 type="button"
                 onClick={() => setOrderType('market')}
                 className={`px-3 py-1 rounded-lg font-semibold cursor-pointer ${
-                  orderType === 'market'
-                    ? 'bg-[#2B313A] text-white'
-                    : 'text-[#848E9C] hover:text-white'
+                  orderType === 'market' ? 'bg-[#2B313A] text-white' : 'text-[#848E9C] hover:text-white'
                 }`}
               >
                 Market
@@ -207,9 +230,7 @@ export const TradingPage: React.FC = () => {
                 type="button"
                 onClick={() => setOrderType('limit')}
                 className={`px-3 py-1 rounded-lg font-semibold cursor-pointer ${
-                  orderType === 'limit'
-                    ? 'bg-[#2B313A] text-white'
-                    : 'text-[#848E9C] hover:text-white'
+                  orderType === 'limit' ? 'bg-[#2B313A] text-white' : 'text-[#848E9C] hover:text-white'
                 }`}
               >
                 Limit
@@ -219,9 +240,7 @@ export const TradingPage: React.FC = () => {
             <form onSubmit={handlePlaceOrder} className="space-y-4">
               {orderType === 'limit' && (
                 <div>
-                  <label className="block text-xs font-semibold text-[#848E9C] mb-1">
-                    Price (USDT)
-                  </label>
+                  <label className="block text-xs font-semibold text-[#848E9C] mb-1">Price (USDT)</label>
                   <input
                     type="number"
                     step="any"
@@ -246,7 +265,7 @@ export const TradingPage: React.FC = () => {
               </div>
 
               {/* Order summary */}
-              <div className="p-3.5 rounded-xl bg-[#1E2329] border border-[#2B313A] space-y-1.5 text-xs font-mono">
+              <div className="p-3.5 rounded-xl bg-[#1E2329] border border-[#2B313A] space-y-1.5 text-xs font-mono tabular-nums">
                 <div className="flex justify-between text-[#848E9C]">
                   <span>Price:</span>
                   <span className="text-white">${currentPrice.toFixed(2)}</span>
@@ -263,10 +282,8 @@ export const TradingPage: React.FC = () => {
 
               <button
                 type="submit"
-                className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-98 cursor-pointer ${
-                  side === 'buy'
-                    ? 'bg-[#0ECB81] text-[#0B0E11]'
-                    : 'bg-[#F6465D] text-white'
+                className={`w-full py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-transform shadow-md active:scale-98 cursor-pointer ${
+                  side === 'buy' ? 'bg-[#0ECB81] text-[#0B0E11]' : 'bg-[#F6465D] text-white'
                 }`}
               >
                 Place {side.toUpperCase()} Order
@@ -277,7 +294,7 @@ export const TradingPage: React.FC = () => {
           <div className="mt-6 pt-4 border-t border-[#2B313A] text-[11px] text-[#848E9C] text-center">
             Slippage tolerance: 0.1% • Instant settlement
           </div>
-        </div>
+        </motion.div>
       </div>
     </div>
   );

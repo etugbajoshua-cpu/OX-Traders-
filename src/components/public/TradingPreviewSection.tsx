@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'motion/react';
 import { ArrowUpRight, BarChart2 } from 'lucide-react';
 
 interface TradingPreviewSectionProps {
@@ -9,33 +10,39 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
   const [selectedPair, setSelectedPair] = useState<'BTC/USDT' | 'ETH/USDT' | 'SOL/USDT'>('BTC/USDT');
 
   const pairData = {
-    'BTC/USDT': { price: 91420.50, change: 3.42, high: 92100.0, low: 88750.0, vol: '38.4B' },
-    'ETH/USDT': { price: 3340.20, change: 2.15, high: 3390.0, low: 3220.0, vol: '18.2B' },
-    'SOL/USDT': { price: 215.80, change: 5.82, high: 221.0, low: 201.5, vol: '9.1B' }
+    'BTC/USDT': { price: 91420.5, change: 3.42, high: 92100.0, low: 88750.0, vol: '38.4B' },
+    'ETH/USDT': { price: 3340.2, change: 2.15, high: 3390.0, low: 3220.0, vol: '18.2B' },
+    'SOL/USDT': { price: 215.8, change: 5.82, high: 221.0, low: 201.5, vol: '9.1B' }
   };
 
   const current = pairData[selectedPair];
 
   const asks = [
     { price: current.price + 14.5, amount: 0.842, total: 0.842 },
-    { price: current.price + 10.2, amount: 1.450, total: 2.292 },
-    { price: current.price + 6.8, amount: 0.520, total: 2.812 },
-    { price: current.price + 2.5, amount: 2.110, total: 4.922 }
+    { price: current.price + 10.2, amount: 1.45, total: 2.292 },
+    { price: current.price + 6.8, amount: 0.52, total: 2.812 },
+    { price: current.price + 2.5, amount: 2.11, total: 4.922 }
   ];
 
   const bids = [
-    { price: current.price - 1.8, amount: 1.950, total: 1.950 },
-    { price: current.price - 5.4, amount: 0.780, total: 2.730 },
-    { price: current.price - 9.1, amount: 3.240, total: 5.970 },
-    { price: current.price - 13.6, amount: 1.150, total: 7.120 }
+    { price: current.price - 1.8, amount: 1.95, total: 1.95 },
+    { price: current.price - 5.4, amount: 0.78, total: 2.73 },
+    { price: current.price - 9.1, amount: 3.24, total: 5.97 },
+    { price: current.price - 13.6, amount: 1.15, total: 7.12 }
   ];
 
   return (
     <section id="trading" className="py-12 sm:py-20 bg-[#0B0E11] border-b border-[#2B313A]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 sm:mb-12 gap-4">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-col md:flex-row md:items-end justify-between mb-8 sm:mb-12 gap-4"
+        >
           <div>
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F0B90B]/10 border border-[#F0B90B]/20 text-[#F0B90B] text-xs font-semibold uppercase tracking-wider mb-3">
+            <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#F0B90B] mb-2">
               Execution Architecture
             </div>
             <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight">
@@ -51,7 +58,7 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
               <button
                 key={pair}
                 onClick={() => setSelectedPair(pair)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all cursor-pointer ${
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-colors cursor-pointer whitespace-nowrap ${
                   selectedPair === pair
                     ? 'bg-[#F0B90B] text-[#0B0E11] shadow-sm'
                     : 'text-[#848E9C] hover:text-white'
@@ -61,17 +68,21 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
               </button>
             ))}
           </div>
-        </div>
+        </motion.div>
 
-        {/* Mock Terminal Card */}
-        <div className="rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-2xl overflow-hidden">
-          {/* Terminal Bar */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.12 }}
+          transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+          className="rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-2xl overflow-hidden"
+        >
           <div className="p-4 bg-[#1E2329] border-b border-[#2B313A] flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-4">
               <span className="text-base font-extrabold font-mono text-white">
                 {selectedPair}
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 tabular-nums">
                 <span className="text-lg font-bold font-mono text-[#0ECB81]">
                   ${current.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                 </span>
@@ -81,7 +92,7 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
               </div>
             </div>
 
-            <div className="flex items-center gap-4 sm:gap-6 text-xs text-[#848E9C] font-mono">
+            <div className="flex items-center gap-4 sm:gap-6 text-xs text-[#848E9C] font-mono tabular-nums">
               <div>
                 <span className="text-[#5E6673] mr-1.5">24h High:</span>
                 <span className="text-white">${current.high.toLocaleString()}</span>
@@ -97,9 +108,7 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
             </div>
           </div>
 
-          {/* Interactive Chart + Order Book Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 min-h-[380px]">
-            {/* Chart Area */}
             <div className="lg:col-span-2 p-5 sm:p-6 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-[#2B313A]">
               <div className="flex items-center justify-between mb-4 text-xs text-[#848E9C]">
                 <div className="flex items-center gap-2">
@@ -114,7 +123,6 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
                 <div className="text-[11px] text-[#5E6673]">Low Latency Feed</div>
               </div>
 
-              {/* Candlestick SVG visualization */}
               <div className="w-full h-56 relative flex items-end">
                 <svg viewBox="0 0 700 200" className="w-full h-full" preserveAspectRatio="none">
                   <defs>
@@ -124,13 +132,11 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
                     </linearGradient>
                   </defs>
 
-                  {/* Shaded Area under trend */}
                   <path
                     d="M 20 160 Q 90 140, 150 150 T 260 120 T 360 135 T 480 80 T 580 95 T 680 40 L 680 200 L 20 200 Z"
                     fill="url(#chartGradYellow)"
                   />
 
-                  {/* Trend Line */}
                   <path
                     d="M 20 160 Q 90 140, 150 150 T 260 120 T 360 135 T 480 80 T 580 95 T 680 40"
                     fill="none"
@@ -139,7 +145,6 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
                     strokeLinecap="round"
                   />
 
-                  {/* Candlestick Pillars with Binance Green #0ECB81 & Red #F6465D */}
                   {[
                     { x: 50, open: 165, close: 155, high: 145, low: 175, green: true },
                     { x: 100, open: 155, close: 148, high: 140, low: 160, green: true },
@@ -174,7 +179,7 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
               </div>
 
               <div className="mt-4 pt-3 border-t border-[#2B313A] flex items-center justify-between text-xs text-[#848E9C]">
-                <span className="font-mono">MA(25): $90,140 | RSI(14): 64.2</span>
+                <span className="font-mono tabular-nums">MA(25): $90,140 | RSI(14): 64.2</span>
                 <button
                   onClick={() => onNavigate('dashboard')}
                   className="text-[#F0B90B] font-bold hover:underline flex items-center gap-1 cursor-pointer"
@@ -184,7 +189,6 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
               </div>
             </div>
 
-            {/* Live Order Book Column */}
             <div className="p-5 sm:p-6 bg-[#181A20] flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-3 text-xs text-[#848E9C] font-semibold uppercase tracking-wider">
@@ -193,8 +197,7 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
                   <span>Total</span>
                 </div>
 
-                {/* Asks (Sell orders) in Binance Red */}
-                <div className="space-y-1.5 mb-3 font-mono text-xs">
+                <div className="space-y-1.5 mb-3 font-mono tabular-nums text-xs">
                   {asks.map((a, i) => (
                     <div key={i} className="flex justify-between items-center text-[#F6465D] py-0.5 px-1 rounded hover:bg-[#F6465D]/10 transition-colors">
                       <span className="font-bold">${a.price.toFixed(1)}</span>
@@ -204,14 +207,12 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
                   ))}
                 </div>
 
-                {/* Spread Divider */}
-                <div className="py-2 px-3 rounded-xl bg-[#1E2329] border border-[#2B313A] text-center my-3">
+                <div className="py-2 px-3 rounded-xl bg-[#1E2329] border border-[#2B313A] text-center my-3 tabular-nums">
                   <span className="text-xs text-[#848E9C] font-mono">Market Spread: </span>
                   <span className="text-xs font-bold font-mono text-[#0ECB81]">$4.30 (0.004%)</span>
                 </div>
 
-                {/* Bids (Buy orders) in Binance Green */}
-                <div className="space-y-1.5 font-mono text-xs">
+                <div className="space-y-1.5 font-mono tabular-nums text-xs">
                   {bids.map((b, i) => (
                     <div key={i} className="flex justify-between items-center text-[#0ECB81] py-0.5 px-1 rounded hover:bg-[#0ECB81]/10 transition-colors">
                       <span className="font-bold">${b.price.toFixed(1)}</span>
@@ -225,14 +226,14 @@ export const TradingPreviewSection: React.FC<TradingPreviewSectionProps> = ({ on
               <div className="mt-6 pt-4 border-t border-[#2B313A]">
                 <button
                   onClick={() => onNavigate('register')}
-                  className="w-full py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-md"
+                  className="w-full py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer shadow-md min-h-[44px]"
                 >
                   Trade with OX TRADERS
                 </button>
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

@@ -1,25 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { Transaction } from '../../types/index.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { getUserTransactions } from '../../lib/firestoreService.ts';
 import { RefreshCw } from 'lucide-react';
 
 export const TransactionsPage: React.FC = () => {
+  const { firebaseUser } = useAuth();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>('');
   const [filterCurrency, setFilterCurrency] = useState<string>('');
 
   const fetchTransactions = async () => {
+    if (!firebaseUser) return;
     try {
       setLoading(true);
-      const params = new URLSearchParams();
-      if (filterType) params.append('type', filterType);
-      if (filterCurrency) params.append('currency', filterCurrency);
-
-      const res = await fetch(`/api/user/transactions?${params.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setTransactions(data.transactions || []);
-      }
+      const list = await getUserTransactions(firebaseUser.uid, {
+        type: filterType || undefined,
+        currency: filterCurrency || undefined,
+      });
+      setTransactions(list);
     } catch (err) {
       console.error('Failed to load transactions:', err);
     } finally {
@@ -29,7 +29,7 @@ export const TransactionsPage: React.FC = () => {
 
   useEffect(() => {
     fetchTransactions();
-  }, [filterType, filterCurrency]);
+  }, [firebaseUser, filterType, filterCurrency]);
 
   return (
     <div className="space-y-6">

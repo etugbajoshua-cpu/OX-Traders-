@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { getUserKyc, submitKyc } from '../../lib/firestoreService.ts';
 import {
   ShieldCheck,
   UploadCloud,
@@ -11,7 +12,7 @@ import {
 import { KYCRecord } from '../../types/index.ts';
 
 export const KYCPage: React.FC = () => {
-  const { user, refreshProfile } = useAuth();
+  const { user, firebaseUser, refreshProfile } = useAuth();
   const [kyc, setKyc] = useState<KYCRecord | null>(null);
 
   // Form State
@@ -33,21 +34,20 @@ export const KYCPage: React.FC = () => {
   const [resultMsg, setResultMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   const fetchKyc = async () => {
+    if (!firebaseUser) return;
     try {
-      const res = await fetch('/api/kyc/status');
-      if (res.ok) {
-        const data = await res.json();
-        setKyc(data.kyc || null);
-        if (data.kyc?.full_legal_name) {
-          setFullName(data.kyc.full_legal_name);
-          setDob(data.kyc.date_of_birth || '1990-01-15');
-          setAddress(data.kyc.residential_address || '');
-          setCity(data.kyc.city || '');
-          setCountry(data.kyc.country || 'United Kingdom');
-          setPostalCode(data.kyc.postal_code || '');
-          setIdType(data.kyc.id_type || 'passport');
-          setIdNumber(data.kyc.id_number || '');
-        }
+      const record = await getUserKyc(firebaseUser.uid);
+      setKyc(record);
+      if (record?.full_legal_name) {
+        setFullName(record.full_legal_name);
+        setDob(record.date_of_birth || '1990-01-15');
+        setAddress(record.residential_address || '');
+        setCity(record.city || '');
+        setCountry(record.country || 'United Kingdom');
+        setPostalCode(record.postal_code || '');
+        setIdType(record.id_type || 'passport');
+        setIdNumber(record.id_number || '');
+        if (record.id_expiry) setIdExpiry(record.id_expiry);
       }
     } catch (err) {
       console.error('Failed to load KYC status:', err);
@@ -56,10 +56,11 @@ export const KYCPage: React.FC = () => {
 
   useEffect(() => {
     fetchKyc();
-  }, []);
+  }, [firebaseUser]);
 
   const handleSubmitKyc = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!firebaseUser || !user) return;
     if (!fullName || !address || !idNumber) {
       setResultMsg({ type: 'error', text: 'Please fill in all required identity details' });
       return;
@@ -69,38 +70,29 @@ export const KYCPage: React.FC = () => {
     setResultMsg(null);
 
     try {
-      const res = await fetch('/api/kyc/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          full_legal_name: fullName.trim(),
-          date_of_birth: dob,
-          residential_address: address.trim(),
-          city: city.trim(),
-          country: country.trim(),
-          postal_code: postalCode.trim(),
-          id_type: idType,
-          id_number: idNumber.trim(),
-          id_expiry: idExpiry,
-          id_front_path: `doc_id_front_${Date.now()}.enc`,
-          address_proof_path: `doc_address_proof_${Date.now()}.enc`,
-          selfie_path: `doc_selfie_${Date.now()}.enc`
-        })
+      await submitKyc({
+        uid: firebaseUser.uid,
+        userEmail: user.email,
+        userName: user.full_name,
+        fullLegalName: fullName.trim(),
+        dateOfBirth: dob,
+        residentialAddress: address.trim(),
+        city: city.trim(),
+        country: country.trim(),
+        postalCode: postalCode.trim(),
+        idType,
+        idNumber: idNumber.trim(),
+        idExpiry: idExpiry || undefined,
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setResultMsg({ type: 'error', text: data.error || 'Submission failed' });
-      } else {
-        setResultMsg({
-          type: 'success',
-          text: 'KYC identity submission recorded. Compliance officers will inspect your documents.'
-        });
-        await fetchKyc();
-        await refreshProfile();
-      }
+      setResultMsg({
+        type: 'success',
+        text: 'KYC identity submission recorded permanently in cloud custody. Compliance officers will inspect your credentials.'
+      });
+      await fetchKyc();
+      await refreshProfile();
     } catch (err: any) {
-      setResultMsg({ type: 'error', text: err.message || 'Connection error' });
+      setResultMsg({ type: 'error', text: err?.message || 'Submission failed' });
     } finally {
       setSubmitting(false);
     }

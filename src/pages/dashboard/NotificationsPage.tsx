@@ -1,19 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { NotificationItem } from '../../types/index.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
+import {
+  getUserNotifications,
+  markAllNotificationsRead,
+  markNotificationRead,
+} from '../../lib/firestoreService.ts';
 import { Check, CheckCircle2, AlertCircle, Info, ShieldAlert } from 'lucide-react';
 
 export const NotificationsPage: React.FC = () => {
+  const { firebaseUser } = useAuth();
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchNotifications = async () => {
+    if (!firebaseUser) return;
     try {
       setLoading(true);
-      const res = await fetch('/api/notifications');
-      if (res.ok) {
-        const data = await res.json();
-        setNotifications(data.notifications || []);
-      }
+      const list = await getUserNotifications(firebaseUser.uid);
+      setNotifications(list);
     } catch (err) {
       console.error('Failed to load notifications:', err);
     } finally {
@@ -23,21 +28,22 @@ export const NotificationsPage: React.FC = () => {
 
   useEffect(() => {
     fetchNotifications();
-  }, []);
+  }, [firebaseUser]);
 
-  const markAsRead = async (id: number) => {
+  const markAsRead = async (id: string | number) => {
     try {
-      await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
-      setNotifications(notifications.map(n => n.id === id ? { ...n, is_read: 1 } : n));
+      await markNotificationRead(String(id));
+      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, is_read: 1 } : n)));
     } catch (err) {
       console.error(err);
     }
   };
 
   const markAllAsRead = async () => {
+    if (!firebaseUser) return;
     try {
-      await fetch('/api/notifications/read-all', { method: 'POST' });
-      setNotifications(notifications.map(n => ({ ...n, is_read: 1 })));
+      await markAllNotificationsRead(firebaseUser.uid);
+      setNotifications((prev) => prev.map((n) => ({ ...n, is_read: 1 })));
     } catch (err) {
       console.error(err);
     }

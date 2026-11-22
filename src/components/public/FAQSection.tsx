@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { ChevronDown, HelpCircle } from 'lucide-react';
+import { motion } from 'motion/react';
+import { ChevronDown } from 'lucide-react';
 
 export const FAQSection: React.FC = () => {
   const [openIdx, setOpenIdx] = useState<number | null>(0);
@@ -34,10 +35,15 @@ export const FAQSection: React.FC = () => {
   return (
     <section id="faq" className="py-12 sm:py-20 bg-[#0B0E11] border-b border-[#2B313A]">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-2xl mx-auto mb-10 sm:mb-14">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F0B90B]/10 border border-[#F0B90B]/20 text-[#F0B90B] text-xs font-semibold uppercase tracking-wider mb-3">
-            <HelpCircle className="w-3.5 h-3.5" />
-            Clear & Transparent
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-2xl mx-auto mb-10 sm:mb-14"
+        >
+          <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#F0B90B] mb-2">
+            Clear &amp; Transparent
           </div>
           <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mb-3 sm:mb-4">
             Frequently Asked Questions
@@ -45,7 +51,7 @@ export const FAQSection: React.FC = () => {
           <p className="text-[#848E9C] text-xs sm:text-sm">
             Everything you need to know about the OX TRADERS platform, blockchain deposits, investment terms, and account security.
           </p>
-        </div>
+        </motion.div>
 
         <div className="space-y-3">
           {faqs.map((faq, idx) => {
@@ -53,18 +59,20 @@ export const FAQSection: React.FC = () => {
             return (
               <div
                 key={idx}
-                className="rounded-2xl bg-[#181A20] border border-[#2B313A] overflow-hidden transition-all duration-200"
+                className={`rounded-2xl bg-[#181A20] border transition-colors duration-200 overflow-hidden ${
+                  isOpen ? 'border-[#F0B90B]/40' : 'border-[#2B313A]'
+                }`}
               >
                 <button
                   onClick={() => setOpenIdx(isOpen ? null : idx)}
-                  className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-4 focus:outline-none hover:bg-[#1E2329] transition-colors cursor-pointer"
+                  className="w-full p-4 sm:p-5 text-left flex items-center justify-between gap-4 focus:outline-none hover:bg-[#1E2329] transition-colors cursor-pointer min-h-[56px]"
                 >
                   <span className="text-sm sm:text-base font-bold text-white">
                     {faq.q}
                   </span>
                   <div
                     className={`p-1.5 rounded-lg bg-[#1E2329] text-[#F0B90B] transition-transform duration-200 shrink-0 ${
-                      isOpen ? 'rotate-180 bg-[#F0B90B]/10 text-[#F0B90B]' : ''
+                      isOpen ? 'rotate-180 bg-[#F0B90B]/15' : ''
                     }`}
                   >
                     <ChevronDown className="w-4 h-4" />
@@ -72,7 +80,7 @@ export const FAQSection: React.FC = () => {
                 </button>
 
                 {isOpen && (
-                  <div className="px-4 sm:px-5 pb-5 pt-1 text-xs sm:text-sm text-[#848E9C] leading-relaxed border-t border-[#2B313A]">
+                  <div className="px-4 sm:px-5 pb-5 pt-3 text-xs sm:text-sm text-[#848E9C] leading-relaxed border-t border-[#2B313A] ox-page-enter">
                     {faq.a}
                   </div>
                 )}

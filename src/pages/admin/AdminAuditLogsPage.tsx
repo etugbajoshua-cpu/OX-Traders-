@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AdminAuditLog } from '../../types/index.ts';
+import { getAdminAuditLogs } from '../../lib/firestoreService.ts';
 import { RefreshCw, Search } from 'lucide-react';
 
 export const AdminAuditLogsPage: React.FC = () => {
@@ -10,11 +11,8 @@ export const AdminAuditLogsPage: React.FC = () => {
   const fetchLogs = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/audit-logs');
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data.logs || []);
-      }
+      const list = await getAdminAuditLogs();
+      setLogs(list);
     } catch (err) {
       console.error('Failed to load audit logs:', err);
     } finally {

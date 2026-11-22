@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'motion/react';
 import { UserPlus, Wallet, LineChart, ArrowDownToLine, ArrowRight } from 'lucide-react';
 
 interface HowItWorksSectionProps {
@@ -40,8 +41,14 @@ export const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onNavigate
   return (
     <section id="how-it-works" className="py-12 sm:py-20 bg-[#0B0E11] border-b border-[#2B313A]">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center max-w-3xl mx-auto mb-10 sm:mb-16">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F0B90B]/10 border border-[#F0B90B]/20 text-[#F0B90B] text-xs font-semibold uppercase tracking-wider mb-3">
+        <motion.div
+          initial={{ opacity: 0, y: 14 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true, amount: 0.2 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="text-center max-w-3xl mx-auto mb-10 sm:mb-14"
+        >
+          <div className="text-xs font-bold uppercase tracking-[0.2em] text-[#F0B90B] mb-2">
             Simple 4-Step Process
           </div>
           <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight mb-3 sm:mb-4">
@@ -50,27 +57,31 @@ export const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onNavigate
           <p className="text-[#848E9C] text-xs sm:text-base leading-relaxed">
             Our end-to-end investment infrastructure is designed for frictionless onboarding, transparent ledger auditing, and dependable digital asset payouts.
           </p>
-        </div>
+        </motion.div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          {steps.map((item) => {
+          {steps.map((item, idx) => {
             const Icon = item.icon;
             return (
-              <div
+              <motion.div
                 key={item.step}
-                className="relative p-6 rounded-2xl bg-[#181A20] border border-[#2B313A] hover:border-[#F0B90B]/40 transition-all shadow-md flex flex-col justify-between"
+                initial={{ opacity: 0, y: 16 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.15 }}
+                transition={{ duration: 0.36, delay: idx * 0.07, ease: [0.16, 1, 0.3, 1] }}
+                className="relative p-6 rounded-2xl bg-[#181A20] border border-[#2B313A] hover:border-[#F0B90B]/40 hover:-translate-y-0.5 transition-[transform,border-color] duration-200 shadow-md flex flex-col justify-between"
               >
                 <div>
                   <div className="flex items-center justify-between mb-4">
                     <div className="w-12 h-12 rounded-xl bg-[#1E2329] border border-[#2B313A] flex items-center justify-center text-[#F0B90B]">
                       <Icon className="w-6 h-6" />
                     </div>
-                    <span className="text-3xl font-black font-mono text-[#2B313A]">
+                    <span className="text-3xl font-black font-mono tabular-nums text-[#2B313A]">
                       {item.step}
                     </span>
                   </div>
 
-                  <div className="inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-[#F0B90B] bg-[#F0B90B]/10 border border-[#F0B90B]/20 mb-2">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#F0B90B] mb-1.5">
                     {item.highlight}
                   </div>
 
@@ -82,7 +93,7 @@ export const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onNavigate
                     {item.description}
                   </p>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
         </div>
@@ -90,7 +101,7 @@ export const HowItWorksSection: React.FC<HowItWorksSectionProps> = ({ onNavigate
         <div className="mt-10 sm:mt-12 text-center">
           <button
             onClick={() => onNavigate('register')}
-            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider shadow-md active:scale-98 cursor-pointer"
+            className="inline-flex items-center gap-2 px-8 py-3.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider shadow-md active:scale-[0.98] transition-transform cursor-pointer min-h-[48px]"
           >
             <span>Open Your Investor Account</span>
             <ArrowRight className="w-4 h-4" />

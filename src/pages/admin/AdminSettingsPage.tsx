@@ -1,20 +1,53 @@
 import React, { useEffect, useState } from 'react';
-import { Save, CheckCircle2, Key, Shield, Settings } from 'lucide-react';
+import {
+  exportFirestoreSnapshot,
+  getAdminSettingsAndStats,
+  saveAdminSettings,
+} from '../../lib/firestoreService.ts';
+import {
+  Save,
+  CheckCircle2,
+  Key,
+  Shield,
+  Settings,
+  Database,
+  Download,
+  AlertTriangle,
+  Copy,
+  Check,
+  Globe
+} from 'lucide-react';
+
+interface DbStatus {
+  engine: string;
+  persistent: boolean;
+  label: string;
+  projectId?: string;
+  databaseId?: string;
+  counts?: {
+    users: number;
+    deposits: number;
+    withdrawals: number;
+    investments: number;
+  };
+}
 
 export const AdminSettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<any[]>([]);
+  const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [copiedDomain, setCopiedDomain] = useState(false);
   const [savedNotice, setSavedNotice] = useState<string | null>(null);
+  const [errorNotice, setErrorNotice] = useState<string | null>(null);
 
-  const fetchSettings = async () => {
+  const fetchSettingsAndDb = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/settings');
-      if (res.ok) {
-        const data = await res.json();
-        setSettings(data.settings || []);
-      }
+      const data = await getAdminSettingsAndStats();
+      setSettings(data.settings || []);
+      setDbStatus(data.dbStatus);
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
@@ -23,47 +56,72 @@ export const AdminSettingsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchSettings();
+    fetchSettingsAndDb();
   }, []);
 
   const handleValueChange = (key: string, value: string) => {
-    setSettings(settings.map(s => s.key === key ? { ...s, value } : s));
+    setSettings((prev) => prev.map((s) => (s.key === key ? { ...s, value } : s)));
   };
+
+  const settingMap: Record<string, string> = {};
+  for (const cur of settings) {
+    settingMap[cur.key] = cur.value;
+  }
 
   const handleSaveAll = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setSavedNotice(null);
+    setErrorNotice(null);
 
     try {
-      const payload = settings.map(s => ({ key: s.key, value: s.value }));
-      const res = await fetch('/api/admin/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: payload })
-      });
-
-      if (res.ok) {
-        setSavedNotice('Platform settings and deposit addresses successfully updated and recorded in audit log.');
-        setTimeout(() => setSavedNotice(null), 3500);
-      }
-    } catch (err) {
-      console.error(err);
+      await saveAdminSettings(settingMap);
+      setSavedNotice('Platform settings and deposit addresses permanently saved to Cloud Firestore & recorded in audit log.');
+      setTimeout(() => setSavedNotice(null), 4000);
+    } catch (err: any) {
+      setErrorNotice(err?.message || 'Failed to update settings');
     } finally {
       setSaving(false);
     }
   };
 
-  const settingMap = settings.reduce((acc, cur) => ({ ...acc, [cur.key]: cur.value }), {});
+  const handleExportSnapshot = async () => {
+    try {
+      setExporting(true);
+      setErrorNotice(null);
+      const snapshot = await exportFirestoreSnapshot();
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `oxtraders-firestore-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setSavedNotice('Full Cloud Firestore JSON backup downloaded cleanly.');
+      setTimeout(() => setSavedNotice(null), 3500);
+    } catch (err: any) {
+      setErrorNotice(err?.message || 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const copyDomain = () => {
+    navigator.clipboard.writeText('oxtraders.online');
+    setCopiedDomain(true);
+    setTimeout(() => setCopiedDomain(false), 2000);
+  };
 
   return (
     <div className="space-y-6 max-w-4xl">
       <div>
         <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-          Platform Configuration & System Settings
+          Platform Configuration &amp; Persistence
         </h2>
         <p className="text-xs text-[#848E9C] mt-1">
-          Configure blockchain deposit addresses, minimums, withdrawal fees, referral rates, and compliance enforcement.
+          Configure deposit addresses, network fees, compliance rules, and permanent Cloud Firestore custody for oxtraders.online.
         </p>
       </div>
 
@@ -71,6 +129,81 @@ export const AdminSettingsPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-[#0ECB81]/15 border border-[#0ECB81]/30 text-[#0ECB81] text-xs flex items-center gap-2.5">
           <CheckCircle2 className="w-5 h-5 shrink-0" />
           <span>{savedNotice}</span>
+        </div>
+      )}
+
+      {errorNotice && (
+        <div className="p-4 rounded-xl bg-[#F6465D]/15 border border-[#F6465D]/30 text-[#F6465D] text-xs flex items-center gap-2.5">
+          <AlertTriangle className="w-5 h-5 shrink-0" />
+          <span>{errorNotice}</span>
+        </div>
+      )}
+
+      {/* Database Persistence & Snapshot Console */}
+      {!loading && dbStatus && (
+        <div className="p-5 sm:p-7 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#2B313A]">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#F0B90B]">
+              <Database className="w-4 h-4" />
+              <span>Database Engine &amp; Permanent User Custody</span>
+            </div>
+            <span className="px-2.5 py-1 rounded-md text-[11px] font-bold border bg-[#0ECB81]/15 text-[#0ECB81] border-[#0ECB81]/30">
+              {dbStatus.label}
+            </span>
+          </div>
+
+          {dbStatus.counts && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 font-mono tabular-nums text-xs">
+              <div className="p-3 rounded-xl bg-[#1E2329] border border-[#2B313A]">
+                <div className="text-[10px] font-sans uppercase text-[#848E9C]">Total Accounts</div>
+                <div className="text-lg font-extrabold text-white mt-0.5">{dbStatus.counts.users}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#1E2329] border border-[#2B313A]">
+                <div className="text-[10px] font-sans uppercase text-[#848E9C]">Deposits</div>
+                <div className="text-lg font-extrabold text-white mt-0.5">{dbStatus.counts.deposits}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#1E2329] border border-[#2B313A]">
+                <div className="text-[10px] font-sans uppercase text-[#848E9C]">Withdrawals</div>
+                <div className="text-lg font-extrabold text-white mt-0.5">{dbStatus.counts.withdrawals}</div>
+              </div>
+              <div className="p-3 rounded-xl bg-[#1E2329] border border-[#2B313A]">
+                <div className="text-[10px] font-sans uppercase text-[#848E9C]">Investments</div>
+                <div className="text-lg font-extrabold text-white mt-0.5">{dbStatus.counts.investments}</div>
+              </div>
+            </div>
+          )}
+
+          <div className="p-4 rounded-xl bg-[#0ECB81]/10 border border-[#0ECB81]/25 text-xs text-[#EAECEF] space-y-2 leading-relaxed">
+            <div className="font-bold text-[#0ECB81] flex items-center gap-2">
+              <Globe className="w-4 h-4 shrink-0" />
+              <span>Custom Domain Checklist for oxtraders.online (Firebase Google Sign-In)</span>
+            </div>
+            <p className="text-[#848E9C]">
+              All investor accounts, balances, deposits, and tickets are permanently persisted in Cloud Firestore (independent of Render restarts). When serving on your custom domain, verify <strong className="text-white">oxtraders.online</strong> (and your Render URL) are listed under <strong className="text-white">Firebase Console &rarr; Authentication &rarr; Settings &rarr; Authorized domains</strong>.
+            </p>
+            <div className="pt-1">
+              <button
+                type="button"
+                onClick={copyDomain}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#0B0E11] border border-[#2B313A] hover:border-[#0ECB81]/50 text-[#0ECB81] font-mono text-[11px] cursor-pointer"
+              >
+                <span>oxtraders.online</span>
+                {copiedDomain ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+              </button>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1">
+            <button
+              type="button"
+              onClick={handleExportSnapshot}
+              disabled={exporting}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1E2329] hover:bg-[#2B313A] border border-[#2B313A] text-white font-semibold text-xs transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <Download className="w-4 h-4 text-[#F0B90B]" />
+              <span>{exporting ? 'Exporting Snapshot...' : 'Download Full Cloud Backup (.json)'}</span>
+            </button>
+          </div>
         </div>
       )}
 
@@ -119,7 +252,7 @@ export const AdminSettingsPage: React.FC = () => {
         <div className="p-5 sm:p-8 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white pb-2 border-b border-[#2B313A]">
             <Shield className="w-4 h-4 text-[#F0B90B]" />
-            <span>Limits, Thresholds & Network Fees</span>
+            <span>Limits, Thresholds &amp; Network Fees</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -189,7 +322,7 @@ export const AdminSettingsPage: React.FC = () => {
         <div className="p-5 sm:p-8 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl space-y-4">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-white pb-2 border-b border-[#2B313A]">
             <Settings className="w-4 h-4 text-[#F0B90B]" />
-            <span>Brand, Compliance & System Status</span>
+            <span>Brand, Compliance &amp; System Status</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -207,7 +340,7 @@ export const AdminSettingsPage: React.FC = () => {
               <label className="block text-xs font-semibold text-[#848E9C] mb-1">Official Support Email</label>
               <input
                 type="email"
-                value={settingMap.support_email || 'support@oxtraders.com'}
+                value={settingMap.support_email || 'support@oxtraders.online'}
                 onChange={(e) => handleValueChange('support_email', e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-white text-xs focus:outline-none focus:border-[#F0B90B]"
               />

@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { SupportTicket, SupportMessage } from '../../types/index.ts';
+import {
+  getAdminTickets,
+  getTicketMessages,
+  replyAdminTicket,
+} from '../../lib/firestoreService.ts';
 import { Send, User, Shield, ChevronLeft, RefreshCw } from 'lucide-react';
 
 export const AdminTicketsPage: React.FC = () => {
@@ -14,11 +19,8 @@ export const AdminTicketsPage: React.FC = () => {
   const fetchTickets = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/tickets');
-      if (res.ok) {
-        const data = await res.json();
-        setTickets(data.tickets || []);
-      }
+      const list = await getAdminTickets();
+      setTickets(list);
     } catch (err) {
       console.error('Failed to load tickets:', err);
     } finally {
@@ -30,11 +32,8 @@ export const AdminTicketsPage: React.FC = () => {
     setSelectedTicket(ticket);
     setTicketStatus(ticket.status);
     try {
-      const res = await fetch(`/api/support/tickets/${ticket.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages || []);
-      }
+      const msgs = await getTicketMessages(String(ticket.id));
+      setMessages(msgs);
     } catch (err) {
       console.error(err);
     }
@@ -50,20 +49,15 @@ export const AdminTicketsPage: React.FC = () => {
 
     setSubmittingReply(true);
     try {
-      const res = await fetch(`/api/admin/tickets/${selectedTicket.id}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: replyText.trim(),
-          status: ticketStatus
-        })
+      await replyAdminTicket({
+        ticketId: String(selectedTicket.id),
+        message: replyText.trim(),
+        status: ticketStatus,
+        currentMessageCount: messages.length || selectedTicket.message_count || 1,
       });
-
-      if (res.ok) {
-        setReplyText('');
-        await openThread(selectedTicket);
-        await fetchTickets();
-      }
+      setReplyText('');
+      await openThread(selectedTicket);
+      await fetchTickets();
     } catch (err) {
       console.error(err);
     } finally {

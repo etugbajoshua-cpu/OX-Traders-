@@ -1,4 +1,4 @@
-import { db } from './db.ts';
+import { dbExecute, dbQueryAll, dbWithTransaction, DbRunner } from './db.ts';
 
 function generateTxRef(prefix: string): string {
   const rand = Math.random().toString(36).substring(2, 9).toUpperCase();
@@ -8,34 +8,38 @@ function generateTxRef(prefix: string): string {
 
 export const ledgerService = {
   // Ensure user has wallet entries for USD, BTC, and USDT
-  ensureWallets(userId: number) {
+  async ensureWallets(userId: number, runner?: DbRunner) {
     const currencies = ['USD', 'BTC', 'USDT'];
-    const insert = db.prepare(`
-      INSERT OR IGNORE INTO wallets (user_id, currency, balance, locked_balance)
-      VALUES (?, ?, 0.0, 0.0)
-    `);
+    const exec = runner ? runner.execute.bind(runner) : dbExecute;
     for (const cur of currencies) {
-      insert.run(userId, cur);
+      await exec(
+        `INSERT INTO wallets (user_id, currency, balance, locked_balance)
+         VALUES (?, ?, 0.0, 0.0)
+         ON CONFLICT (user_id, currency) DO NOTHING`,
+        [userId, cur]
+      );
     }
   },
 
   // Get user's wallet balances
-  getBalances(userId: number) {
-    this.ensureWallets(userId);
-    const rows = db.prepare('SELECT currency, balance, locked_balance FROM wallets WHERE user_id = ?').all(userId) as any[];
+  async getBalances(userId: number) {
+    await this.ensureWallets(userId);
+    const rows = await dbQueryAll<any>('SELECT currency, balance, locked_balance FROM wallets WHERE user_id = ?', [userId]);
     const balances: Record<string, { available: number; locked: number; total: number }> = {};
     for (const r of rows) {
+      const bal = Number(r.balance || 0);
+      const locked = Number(r.locked_balance || 0);
       balances[r.currency] = {
-        available: Number(r.balance.toFixed(6)),
-        locked: Number(r.locked_balance.toFixed(6)),
-        total: Number((r.balance + r.locked_balance).toFixed(6))
+        available: Number(bal.toFixed(6)),
+        locked: Number(locked.toFixed(6)),
+        total: Number((bal + locked).toFixed(6))
       };
     }
     return balances;
   },
 
   // Credit user account with double-entry record
-  creditWallet(params: {
+  async creditWallet(params: {
     userId: number;
     currency: string;
     amount: number;
@@ -44,32 +48,30 @@ export const ledgerService = {
     relatedId?: string;
   }) {
     if (params.amount <= 0) throw new Error('Credit amount must be greater than zero');
-    this.ensureWallets(params.userId);
+    await this.ensureWallets(params.userId);
 
     const txRef = generateTxRef('CRD');
 
-    const execute = db.transaction(() => {
-      // 1. Update wallet balance
-      db.prepare(`
-        UPDATE wallets 
-        SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND currency = ?
-      `).run(params.amount, params.userId, params.currency);
+    return dbWithTransaction(async (tx) => {
+      await tx.execute(
+        `UPDATE wallets
+         SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND currency = ?`,
+        [params.amount, params.userId, params.currency]
+      );
 
-      // 2. Insert immutable transaction log
-      const res = db.prepare(`
-        INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
-        VALUES (?, ?, ?, ?, ?, 0.0, 'completed', ?, ?)
-      `).run(params.userId, txRef, params.type, params.currency, params.amount, params.description, params.relatedId || null);
+      const res = await tx.execute(
+        `INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
+         VALUES (?, ?, ?, ?, ?, 0.0, 'completed', ?, ?)`,
+        [params.userId, txRef, params.type, params.currency, params.amount, params.description, params.relatedId || null]
+      );
 
-      return { txRef, txId: res.lastInsertRowid };
+      return { txRef, txId: res.lastInsertId };
     });
-
-    return execute();
   },
 
   // Debit user account with balance check
-  debitWallet(params: {
+  async debitWallet(params: {
     userId: number;
     currency: string;
     amount: number;
@@ -78,35 +80,39 @@ export const ledgerService = {
     relatedId?: string;
   }) {
     if (params.amount <= 0) throw new Error('Debit amount must be greater than zero');
-    this.ensureWallets(params.userId);
+    await this.ensureWallets(params.userId);
 
     const txRef = generateTxRef('DBT');
 
-    const execute = db.transaction(() => {
-      const wallet = db.prepare('SELECT balance FROM wallets WHERE user_id = ? AND currency = ?').get(params.userId, params.currency) as any;
-      if (!wallet || wallet.balance < params.amount) {
-        throw new Error(`Insufficient funds: available balance is ${wallet ? wallet.balance : 0} ${params.currency}`);
+    return dbWithTransaction(async (tx) => {
+      const wallet = await tx.queryOne<any>(
+        'SELECT balance FROM wallets WHERE user_id = ? AND currency = ?',
+        [params.userId, params.currency]
+      );
+      const currentBalance = Number(wallet?.balance || 0);
+      if (!wallet || currentBalance < params.amount) {
+        throw new Error(`Insufficient funds: available balance is ${currentBalance} ${params.currency}`);
       }
 
-      db.prepare(`
-        UPDATE wallets 
-        SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND currency = ?
-      `).run(params.amount, params.userId, params.currency);
+      await tx.execute(
+        `UPDATE wallets
+         SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND currency = ?`,
+        [params.amount, params.userId, params.currency]
+      );
 
-      const res = db.prepare(`
-        INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
-        VALUES (?, ?, ?, ?, ?, 0.0, 'completed', ?, ?)
-      `).run(params.userId, txRef, params.type, params.currency, params.amount, params.description, params.relatedId || null);
+      const res = await tx.execute(
+        `INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
+         VALUES (?, ?, ?, ?, ?, 0.0, 'completed', ?, ?)`,
+        [params.userId, txRef, params.type, params.currency, params.amount, params.description, params.relatedId || null]
+      );
 
-      return { txRef, txId: res.lastInsertRowid };
+      return { txRef, txId: res.lastInsertId };
     });
-
-    return execute();
   },
 
   // Lock funds when requesting withdrawal to prevent double-spending
-  requestWithdrawal(params: {
+  async requestWithdrawal(params: {
     userId: number;
     currency: 'BTC' | 'USDT';
     network: string;
@@ -114,7 +120,7 @@ export const ledgerService = {
     amount: number;
     fee: number;
   }) {
-    this.ensureWallets(params.userId);
+    await this.ensureWallets(params.userId);
     const totalDeduction = params.amount;
     const netAmount = params.amount - params.fee;
     if (netAmount <= 0) {
@@ -123,122 +129,120 @@ export const ledgerService = {
 
     const txRef = generateTxRef('WTH');
 
-    const execute = db.transaction(() => {
-      const wallet = db.prepare('SELECT balance FROM wallets WHERE user_id = ? AND currency = ?').get(params.userId, params.currency) as any;
-      if (!wallet || wallet.balance < totalDeduction) {
-        throw new Error(`Insufficient available balance: ${wallet ? wallet.balance : 0} ${params.currency}`);
+    return dbWithTransaction(async (tx) => {
+      const wallet = await tx.queryOne<any>(
+        'SELECT balance FROM wallets WHERE user_id = ? AND currency = ?',
+        [params.userId, params.currency]
+      );
+      const currentBalance = Number(wallet?.balance || 0);
+      if (!wallet || currentBalance < totalDeduction) {
+        throw new Error(`Insufficient available balance: ${currentBalance} ${params.currency}`);
       }
 
-      // Move from available to locked balance
-      db.prepare(`
-        UPDATE wallets
-        SET balance = balance - ?, locked_balance = locked_balance + ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND currency = ?
-      `).run(totalDeduction, totalDeduction, params.userId, params.currency);
+      await tx.execute(
+        `UPDATE wallets
+         SET balance = balance - ?, locked_balance = locked_balance + ?, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND currency = ?`,
+        [totalDeduction, totalDeduction, params.userId, params.currency]
+      );
 
-      // Create withdrawal entry
-      const wthRes = db.prepare(`
-        INSERT INTO withdrawals (user_id, currency, network, destination_address, amount, fee, net_amount, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
-      `).run(params.userId, params.currency, params.network, params.destinationAddress, params.amount, params.fee, netAmount);
+      const wthRes = await tx.execute(
+        `INSERT INTO withdrawals (user_id, currency, network, destination_address, amount, fee, net_amount, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
+        [params.userId, params.currency, params.network, params.destinationAddress, params.amount, params.fee, netAmount]
+      );
 
-      const withdrawalId = wthRes.lastInsertRowid;
+      const withdrawalId = wthRes.lastInsertId;
 
-      // Create transaction log
-      db.prepare(`
-        INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
-        VALUES (?, ?, 'withdrawal', ?, ?, ?, 'pending', ?, ?)
-      `).run(params.userId, txRef, params.currency, params.amount, params.fee, `Withdrawal request to ${params.destinationAddress}`, String(withdrawalId));
+      await tx.execute(
+        `INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
+         VALUES (?, ?, 'withdrawal', ?, ?, ?, 'pending', ?, ?)`,
+        [params.userId, txRef, params.currency, params.amount, params.fee, `Withdrawal request to ${params.destinationAddress}`, String(withdrawalId)]
+      );
 
       return { withdrawalId, txRef, netAmount };
     });
-
-    return execute();
   },
 
   // Approve and mark withdrawal completed
-  completeWithdrawal(withdrawalId: number, payoutTxHash: string, adminId: number) {
-    const execute = db.transaction(() => {
-      const wth = db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(withdrawalId) as any;
+  async completeWithdrawal(withdrawalId: number, payoutTxHash: string, _adminId: number) {
+    return dbWithTransaction(async (tx) => {
+      const wth = await tx.queryOne<any>('SELECT * FROM withdrawals WHERE id = ?', [withdrawalId]);
       if (!wth) throw new Error('Withdrawal record not found');
       if (wth.status === 'completed') throw new Error('Withdrawal is already marked completed');
 
-      // Deduct locked balance permanently
-      db.prepare(`
-        UPDATE wallets
-        SET locked_balance = locked_balance - ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND currency = ?
-      `).run(wth.amount, wth.user_id, wth.currency);
+      await tx.execute(
+        `UPDATE wallets
+         SET locked_balance = locked_balance - ?, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND currency = ?`,
+        [wth.amount, wth.user_id, wth.currency]
+      );
 
-      // Update withdrawal record
-      db.prepare(`
-        UPDATE withdrawals
-        SET status = 'completed', payout_tx_hash = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(payoutTxHash, withdrawalId);
+      await tx.execute(
+        `UPDATE withdrawals
+         SET status = 'completed', payout_tx_hash = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [payoutTxHash, withdrawalId]
+      );
 
-      // Update related transaction
-      db.prepare(`
-        UPDATE transactions
-        SET status = 'completed', description = description || ' [TXID: ' || ? || ']'
-        WHERE related_id = ? AND type = 'withdrawal'
-      `).run(payoutTxHash, String(withdrawalId));
+      await tx.execute(
+        `UPDATE transactions
+         SET status = 'completed', description = description || ' [TXID: ' || CAST(? AS TEXT) || ']'
+         WHERE related_id = ? AND type = 'withdrawal'`,
+        [payoutTxHash, String(withdrawalId)]
+      );
 
-      // Notify user
-      db.prepare(`
-        INSERT INTO notifications (user_id, title, message, type)
-        VALUES (?, 'Withdrawal Processed Successfully', ?, 'success')
-      `).run(wth.user_id, `Your withdrawal of ${wth.net_amount} ${wth.currency} has been broadcast to the network. Hash: ${payoutTxHash}`);
+      await tx.execute(
+        `INSERT INTO notifications (user_id, title, message, type)
+         VALUES (?, 'Withdrawal Processed Successfully', ?, 'success')`,
+        [wth.user_id, `Your withdrawal of ${wth.net_amount} ${wth.currency} has been broadcast to the network. Hash: ${payoutTxHash}`]
+      );
 
       return { success: true };
     });
-
-    return execute();
   },
 
   // Reject withdrawal and release locked balance
-  rejectWithdrawal(withdrawalId: number, reason: string, adminId: number) {
-    const execute = db.transaction(() => {
-      const wth = db.prepare('SELECT * FROM withdrawals WHERE id = ?').get(withdrawalId) as any;
+  async rejectWithdrawal(withdrawalId: number, reason: string, _adminId: number) {
+    return dbWithTransaction(async (tx) => {
+      const wth = await tx.queryOne<any>('SELECT * FROM withdrawals WHERE id = ?', [withdrawalId]);
       if (!wth) throw new Error('Withdrawal record not found');
       if (wth.status === 'completed') throw new Error('Cannot reject a completed withdrawal');
       if (wth.status === 'rejected') throw new Error('Withdrawal is already rejected');
 
-      // Release locked balance back to available
-      db.prepare(`
-        UPDATE wallets
-        SET balance = balance + ?, locked_balance = locked_balance - ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ? AND currency = ?
-      `).run(wth.amount, wth.amount, wth.user_id, wth.currency);
+      await tx.execute(
+        `UPDATE wallets
+         SET balance = balance + ?, locked_balance = locked_balance - ?, updated_at = CURRENT_TIMESTAMP
+         WHERE user_id = ? AND currency = ?`,
+        [wth.amount, wth.amount, wth.user_id, wth.currency]
+      );
 
-      // Update withdrawal
-      db.prepare(`
-        UPDATE withdrawals
-        SET status = 'rejected', admin_note = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE id = ?
-      `).run(reason, withdrawalId);
+      await tx.execute(
+        `UPDATE withdrawals
+         SET status = 'rejected', admin_note = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE id = ?`,
+        [reason, withdrawalId]
+      );
 
-      // Update transaction
-      db.prepare(`
-        UPDATE transactions
-        SET status = 'cancelled', description = description || ' [Rejected: ' || ? || ']'
-        WHERE related_id = ? AND type = 'withdrawal'
-      `).run(reason, String(withdrawalId));
+      await tx.execute(
+        `UPDATE transactions
+         SET status = 'cancelled', description = description || ' [Rejected: ' || CAST(? AS TEXT) || ']'
+         WHERE related_id = ? AND type = 'withdrawal'`,
+        [reason, String(withdrawalId)]
+      );
 
-      // Notify user
-      db.prepare(`
-        INSERT INTO notifications (user_id, title, message, type)
-        VALUES (?, 'Withdrawal Request Rejected', ?, 'warning')
-      `).run(wth.user_id, `Your withdrawal request of ${wth.amount} ${wth.currency} was rejected. Reason: ${reason}. Funds have been restored to your balance.`);
+      await tx.execute(
+        `INSERT INTO notifications (user_id, title, message, type)
+         VALUES (?, 'Withdrawal Request Rejected', ?, 'warning')`,
+        [wth.user_id, `Your withdrawal request of ${wth.amount} ${wth.currency} was rejected. Reason: ${reason}. Funds have been restored to your balance.`]
+      );
 
       return { success: true };
     });
-
-    return execute();
   },
 
   // Admin Manual Adjustment (Audit-compliant with double entry)
-  adminAdjustBalance(params: {
+  async adminAdjustBalance(params: {
     adminId: number;
     adminEmail: string;
     userId: number;
@@ -248,64 +252,75 @@ export const ledgerService = {
     reason: string;
   }) {
     if (params.amount <= 0) throw new Error('Adjustment amount must be positive');
-    this.ensureWallets(params.userId);
+    await this.ensureWallets(params.userId);
 
     const ref = generateTxRef('ADJ');
 
-    const execute = db.transaction(() => {
-      const user = db.prepare('SELECT email, full_name FROM users WHERE id = ?').get(params.userId) as any;
+    return dbWithTransaction(async (tx) => {
+      const user = await tx.queryOne<any>('SELECT email, full_name FROM users WHERE id = ?', [params.userId]);
       if (!user) throw new Error('User not found');
 
       if (params.type === 'credit') {
-        db.prepare(`
-          UPDATE wallets
-          SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = ? AND currency = ?
-        `).run(params.amount, params.userId, params.currency);
+        await tx.execute(
+          `UPDATE wallets
+           SET balance = balance + ?, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = ? AND currency = ?`,
+          [params.amount, params.userId, params.currency]
+        );
 
-        db.prepare(`
-          INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
-          VALUES (?, ?, 'balance_credit', ?, ?, 0.0, 'completed', ?, ?)
-        `).run(params.userId, ref, params.currency, params.amount, `Admin balance adjustment credit: ${params.reason}`, `admin_${params.adminId}`);
+        await tx.execute(
+          `INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
+           VALUES (?, ?, 'balance_credit', ?, ?, 0.0, 'completed', ?, ?)`,
+          [params.userId, ref, params.currency, params.amount, `Admin balance adjustment credit: ${params.reason}`, `admin_${params.adminId}`]
+        );
       } else {
-        const wallet = db.prepare('SELECT balance FROM wallets WHERE user_id = ? AND currency = ?').get(params.userId, params.currency) as any;
-        if (!wallet || wallet.balance < params.amount) {
-          throw new Error(`User balance insufficient for debit: currently ${wallet ? wallet.balance : 0} ${params.currency}`);
+        const wallet = await tx.queryOne<any>(
+          'SELECT balance FROM wallets WHERE user_id = ? AND currency = ?',
+          [params.userId, params.currency]
+        );
+        const currentBalance = Number(wallet?.balance || 0);
+        if (!wallet || currentBalance < params.amount) {
+          throw new Error(`User balance insufficient for debit: currently ${currentBalance} ${params.currency}`);
         }
 
-        db.prepare(`
-          UPDATE wallets
-          SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
-          WHERE user_id = ? AND currency = ?
-        `).run(params.amount, params.userId, params.currency);
+        await tx.execute(
+          `UPDATE wallets
+           SET balance = balance - ?, updated_at = CURRENT_TIMESTAMP
+           WHERE user_id = ? AND currency = ?`,
+          [params.amount, params.userId, params.currency]
+        );
 
-        db.prepare(`
-          INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
-          VALUES (?, ?, 'balance_debit', ?, ?, 0.0, 'completed', ?, ?)
-        `).run(params.userId, ref, params.currency, params.amount, `Admin balance adjustment debit: ${params.reason}`, `admin_${params.adminId}`);
+        await tx.execute(
+          `INSERT INTO transactions (user_id, transaction_ref, type, currency, amount, fee, status, description, related_id)
+           VALUES (?, ?, 'balance_debit', ?, ?, 0.0, 'completed', ?, ?)`,
+          [params.userId, ref, params.currency, params.amount, `Admin balance adjustment debit: ${params.reason}`, `admin_${params.adminId}`]
+        );
       }
 
-      // Record in immutable admin audit log
-      db.prepare(`
-        INSERT INTO admin_audit_logs (admin_id, admin_email, action, target_type, target_id, details)
-        VALUES (?, ?, 'balance_adjustment', 'user', ?, ?)
-      `).run(params.adminId, params.adminEmail, String(params.userId), JSON.stringify({
-        currency: params.currency,
-        type: params.type,
-        amount: params.amount,
-        reason: params.reason,
-        ref
-      }));
+      await tx.execute(
+        `INSERT INTO admin_audit_logs (admin_id, admin_email, action, target_type, target_id, details)
+         VALUES (?, ?, 'balance_adjustment', 'user', ?, ?)`,
+        [
+          params.adminId,
+          params.adminEmail,
+          String(params.userId),
+          JSON.stringify({
+            currency: params.currency,
+            type: params.type,
+            amount: params.amount,
+            reason: params.reason,
+            ref
+          })
+        ]
+      );
 
-      // Notify user
-      db.prepare(`
-        INSERT INTO notifications (user_id, title, message, type)
-        VALUES (?, 'Account Balance Adjusted', ?, 'info')
-      `).run(params.userId, `Your ${params.currency} balance was adjusted by ${params.type === 'credit' ? '+' : '-'}${params.amount} ${params.currency}. Note: ${params.reason}`);
+      await tx.execute(
+        `INSERT INTO notifications (user_id, title, message, type)
+         VALUES (?, 'Account Balance Adjusted', ?, 'info')`,
+        [params.userId, `Your ${params.currency} balance was adjusted by ${params.type === 'credit' ? '+' : '-'}${params.amount} ${params.currency}. Note: ${params.reason}`]
+      );
 
       return { ref, success: true };
     });
-
-    return execute();
   }
 };

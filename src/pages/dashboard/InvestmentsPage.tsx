@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { InvestmentPosition } from '../../types/index.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { getUserInvestments } from '../../lib/firestoreService.ts';
 import { Plus } from 'lucide-react';
 
 interface InvestmentsPageProps {
@@ -7,26 +9,28 @@ interface InvestmentsPageProps {
 }
 
 export const InvestmentsPage: React.FC<InvestmentsPageProps> = ({ onNavigateSection }) => {
+  const { firebaseUser } = useAuth();
   const [positions, setPositions] = useState<InvestmentPosition[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchPositions = async () => {
-    try {
-      const res = await fetch('/api/investments/my-positions');
-      if (res.ok) {
-        const data = await res.json();
-        setPositions(data.positions || []);
-      }
-    } catch (err) {
-      console.error('Failed to load investment positions:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
+    const fetchPositions = async () => {
+      if (!firebaseUser) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const list = await getUserInvestments(firebaseUser.uid);
+        setPositions(list);
+      } catch (err) {
+        console.error('Failed to load investment positions:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchPositions();
-  }, []);
+  }, [firebaseUser]);
 
   const totalAllocated = positions.reduce((sum, p) => p.status === 'active' ? sum + p.capital_amount : sum, 0);
   const totalEarned = positions.reduce((sum, p) => sum + p.total_earned, 0);

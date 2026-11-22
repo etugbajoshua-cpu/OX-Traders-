@@ -1,22 +1,28 @@
 import React, { useEffect, useState } from 'react';
 import { Deposit } from '../../types/index.ts';
-import { ExternalLink, RefreshCw } from 'lucide-react';
+import {
+  approveDeposit,
+  getAdminDeposits,
+  rejectDeposit,
+} from '../../lib/firestoreService.ts';
+import { ExternalLink, RefreshCw, X } from 'lucide-react';
 
 export const AdminDepositsPage: React.FC = () => {
   const [deposits, setDeposits] = useState<Deposit[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
-  const [actionProcessing, setActionProcessing] = useState<number | null>(null);
+  const [actionProcessing, setActionProcessing] = useState<string | number | null>(null);
+  const [confirmApproveDep, setConfirmApproveDep] = useState<Deposit | null>(null);
+  const [rejectModalDep, setRejectModalDep] = useState<Deposit | null>(null);
+  const [rejectReason, setRejectReason] = useState(
+    'Transaction hash could not be verified on the blockchain explorer'
+  );
 
   const fetchDeposits = async () => {
     try {
       setLoading(true);
-      const url = statusFilter ? `/api/admin/deposits?status=${statusFilter}` : '/api/admin/deposits';
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setDeposits(data.deposits || []);
-      }
+      const list = await getAdminDeposits(statusFilter || undefined);
+      setDeposits(list);
     } catch (err) {
       console.error('Failed to load admin deposits:', err);
     } finally {
@@ -28,17 +34,14 @@ export const AdminDepositsPage: React.FC = () => {
     fetchDeposits();
   }, [statusFilter]);
 
-  const handleApprove = async (id: number) => {
-    if (!confirm('Approve this cryptocurrency deposit? The user balance will be credited immediately.')) {
-      return;
-    }
-
+  const handleConfirmApprove = async () => {
+    if (!confirmApproveDep) return;
+    const id = confirmApproveDep.id;
     setActionProcessing(id);
     try {
-      const res = await fetch(`/api/admin/deposits/${id}/approve`, { method: 'POST' });
-      if (res.ok) {
-        await fetchDeposits();
-      }
+      await approveDeposit(String(id));
+      setConfirmApproveDep(null);
+      await fetchDeposits();
     } catch (err) {
       console.error(err);
     } finally {
@@ -46,20 +49,18 @@ export const AdminDepositsPage: React.FC = () => {
     }
   };
 
-  const handleReject = async (id: number) => {
-    const reason = prompt('Enter rejection reason for invalid transaction:', 'Transaction hash could not be verified on the blockchain explorer');
-    if (reason === null) return;
-
+  const handleConfirmReject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rejectModalDep) return;
+    const id = rejectModalDep.id;
     setActionProcessing(id);
     try {
-      const res = await fetch(`/api/admin/deposits/${id}/reject`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason })
-      });
-      if (res.ok) {
-        await fetchDeposits();
-      }
+      await rejectDeposit(
+        String(id),
+        rejectReason.trim() || 'Transaction verification unsuccessful'
+      );
+      setRejectModalDep(null);
+      await fetchDeposits();
     } catch (err) {
       console.error(err);
     } finally {
@@ -186,7 +187,7 @@ export const AdminDepositsPage: React.FC = () => {
                         {isPending ? (
                           <>
                             <button
-                              onClick={() => handleApprove(dep.id)}
+                              onClick={() => setConfirmApproveDep(dep)}
                               disabled={actionProcessing === dep.id}
                               className="px-3 py-1.5 rounded-lg bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider shadow-sm disabled:opacity-50 cursor-pointer"
                             >
@@ -194,7 +195,10 @@ export const AdminDepositsPage: React.FC = () => {
                             </button>
 
                             <button
-                              onClick={() => handleReject(dep.id)}
+                              onClick={() => {
+                                setRejectReason('Transaction hash could not be verified on the blockchain explorer');
+                                setRejectModalDep(dep);
+                              }}
                               disabled={actionProcessing === dep.id}
                               className="px-3 py-1.5 rounded-lg bg-[#F6465D]/10 hover:bg-[#F6465D]/20 text-[#F6465D] border border-[#F6465D]/30 font-semibold text-xs disabled:opacity-50 cursor-pointer"
                             >
@@ -213,6 +217,84 @@ export const AdminDepositsPage: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* Approve Confirmation Modal */}
+      {confirmApproveDep && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setConfirmApproveDep(null)}
+              className="absolute top-4 right-4 p-1 text-[#848E9C] hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-lg font-bold text-white mb-1">Confirm Deposit Credit</h3>
+            <p className="text-xs text-[#848E9C] mb-5 leading-relaxed">
+              Credit <strong className="text-[#0ECB81]">{confirmApproveDep.amount} {confirmApproveDep.currency}</strong> to <strong className="text-white">{confirmApproveDep.user_name || confirmApproveDep.user_email}</strong> immediately in the custodial wallet?
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmApproveDep(null)}
+                className="flex-1 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-[#848E9C] hover:text-white text-xs font-semibold cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmApprove}
+                disabled={actionProcessing === confirmApproveDep.id}
+                className="flex-1 py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-xs uppercase tracking-wider cursor-pointer"
+              >
+                {actionProcessing === confirmApproveDep.id ? 'Crediting...' : 'Approve & Credit'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reject Deposit Modal */}
+      {rejectModalDep && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 shadow-2xl relative">
+            <button
+              onClick={() => setRejectModalDep(null)}
+              className="absolute top-4 right-4 p-1 text-[#848E9C] hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <h3 className="text-lg font-bold text-white mb-1">Reject Deposit Submission</h3>
+            <p className="text-xs text-[#848E9C] mb-4">
+              Specify rejection reason for {rejectModalDep.amount} {rejectModalDep.currency}.
+            </p>
+            <form onSubmit={handleConfirmReject} className="space-y-4">
+              <textarea
+                rows={3}
+                required
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-white text-xs focus:outline-none focus:border-[#F0B90B] resize-none"
+              />
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setRejectModalDep(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-[#848E9C] hover:text-white text-xs font-semibold cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={actionProcessing === rejectModalDep.id}
+                  className="flex-1 py-2.5 rounded-xl bg-[#F6465D] hover:bg-[#F6465D]/90 text-white font-bold text-xs uppercase tracking-wider cursor-pointer"
+                >
+                  {actionProcessing === rejectModalDep.id ? 'Rejecting...' : 'Confirm Reject'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

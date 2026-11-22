@@ -1,5 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import {
+  DEFAULT_PLATFORM_SETTINGS,
+  getPublicPlatformSettings,
+  getUserWithdrawals,
+  submitWithdrawal
+} from '../../lib/firestoreService.ts';
 import {
   ArrowUpFromLine,
   AlertCircle,
@@ -10,41 +16,47 @@ import {
 import { Withdrawal } from '../../types/index.ts';
 
 export const WithdrawPage: React.FC = () => {
-  const { balances, kycStatus, refreshProfile } = useAuth();
+  const { user, firebaseUser, balances, kycStatus, refreshProfile } = useAuth();
   const [currency, setCurrency] = useState<'BTC' | 'USDT'>('USDT');
   const [amount, setAmount] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [platformSettings, setPlatformSettings] = useState<Record<string, string>>(DEFAULT_PLATFORM_SETTINGS);
 
   const [history, setHistory] = useState<Withdrawal[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
 
-  // Config parameters
-  const fee = currency === 'BTC' ? 0.00035 : 1.50;
-  const minWithdrawal = currency === 'BTC' ? 0.002 : 25.0;
+  const fee =
+    currency === 'BTC'
+      ? Number(platformSettings.btc_withdrawal_fee || 0.00035)
+      : Number(platformSettings.usdt_withdrawal_fee || 1.5);
+  const minWithdrawal =
+    currency === 'BTC'
+      ? Number(platformSettings.btc_min_withdrawal || 0.002)
+      : Number(platformSettings.usdt_min_withdrawal || 25.0);
   const availableBal = balances[currency]?.available || 0;
 
   const numAmount = parseFloat(amount) || 0;
   const netAmount = Math.max(0, numAmount - fee);
 
-  const fetchHistory = async () => {
+  const fetchHistoryAndSettings = useCallback(async () => {
     try {
-      const res = await fetch('/api/withdrawals/history');
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data.withdrawals || []);
-      }
+      const settingsPromise = getPublicPlatformSettings();
+      const wthPromise = firebaseUser ? getUserWithdrawals(firebaseUser.uid) : Promise.resolve([]);
+      const [settings, wths] = await Promise.all([settingsPromise, wthPromise]);
+      setPlatformSettings(settings);
+      setHistory(wths);
     } catch (err) {
       console.error('Failed to load withdrawal history:', err);
     } finally {
       setLoadingHistory(false);
     }
-  };
+  }, [firebaseUser]);
 
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    fetchHistoryAndSettings();
+  }, [fetchHistoryAndSettings]);
 
   const handleMaxAmount = () => {
     setAmount(String(availableBal));
@@ -52,6 +64,8 @@ export const WithdrawPage: React.FC = () => {
 
   const handleWithdraw = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!firebaseUser) return;
+
     if (numAmount < minWithdrawal) {
       setResult({ type: 'error', message: `Minimum withdrawal for ${currency} is ${minWithdrawal} ${currency}` });
       return;
@@ -76,31 +90,26 @@ export const WithdrawPage: React.FC = () => {
     setResult(null);
 
     try {
-      const res = await fetch('/api/withdrawals/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currency,
-          destination_address: destinationAddress.trim(),
-          amount: numAmount
-        })
+      await submitWithdrawal({
+        uid: firebaseUser.uid,
+        userEmail: user?.email || firebaseUser.email || '',
+        userName: user?.full_name || firebaseUser.displayName || 'Investor',
+        currency,
+        destinationAddress: destinationAddress.trim(),
+        amount: numAmount,
+        fee
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setResult({ type: 'error', message: data.error || 'Withdrawal submission failed' });
-      } else {
-        setResult({
-          type: 'success',
-          message: `Withdrawal of ${numAmount} ${currency} submitted successfully. Funds have been locked and queued for broadcasting.`
-        });
-        setAmount('');
-        setDestinationAddress('');
-        await fetchHistory();
-        await refreshProfile();
-      }
+      setResult({
+        type: 'success',
+        message: `Withdrawal of ${numAmount} ${currency} submitted successfully. Funds have been locked and queued for broadcasting.`
+      });
+      setAmount('');
+      setDestinationAddress('');
+      await fetchHistoryAndSettings();
+      await refreshProfile();
     } catch (err: any) {
-      setResult({ type: 'error', message: err.message || 'Connection error' });
+      setResult({ type: 'error', message: err.message || 'Withdrawal submission failed' });
     } finally {
       setSubmitting(false);
     }

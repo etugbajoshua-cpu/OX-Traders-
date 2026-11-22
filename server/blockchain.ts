@@ -1,4 +1,4 @@
-import { db } from './db.ts';
+import { dbQueryOne } from './db.ts';
 
 export interface VerificationResult {
   verified: boolean;
@@ -16,7 +16,7 @@ const USDT_TRC20_DEPOSIT_ADDRESS = 'TB4Uq6VQMFMbDZUq3xK4jM8mqz6rb2TqGf';
 export async function verifyBlockchainTransaction(
   currency: 'BTC' | 'USDT',
   txHash: string,
-  claimedAmount: number
+  _claimedAmount: number
 ): Promise<VerificationResult> {
   const cleanTx = txHash.trim();
 
@@ -33,9 +33,10 @@ export async function verifyBlockchainTransaction(
   }
 
   // Anti-replay check: ensure this tx_hash has not already been confirmed for another deposit
-  const existingConfirmed = db.prepare(`
-    SELECT id, user_id, status FROM deposits WHERE tx_hash = ? AND status = 'confirmed'
-  `).get(cleanTx);
+  const existingConfirmed = await dbQueryOne(
+    `SELECT id, user_id, status FROM deposits WHERE tx_hash = ? AND status = 'confirmed'`,
+    [cleanTx]
+  );
 
   if (existingConfirmed) {
     return {
@@ -50,7 +51,6 @@ export async function verifyBlockchainTransaction(
   if (currency === 'BTC') {
     const explorerUrl = `https://mempool.space/tx/${cleanTx}`;
     try {
-      // Query Mempool / Blockstream public API with a 4s timeout
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(`https://mempool.space/api/tx/${cleanTx}`, { signal: controller.signal });
@@ -60,8 +60,7 @@ export async function verifyBlockchainTransaction(
         const txData = await res.json() as any;
         const status = txData.status;
         const isConfirmed = status && status.confirmed;
-        
-        // Find outputs matching the OX TRADERS BTC address
+
         let satoshis = 0;
         if (Array.isArray(txData.vout)) {
           for (const out of txData.vout) {
@@ -70,7 +69,7 @@ export async function verifyBlockchainTransaction(
             }
           }
         }
-        
+
         const btcReceived = satoshis / 100000000;
 
         if (btcReceived > 0) {
@@ -101,7 +100,6 @@ export async function verifyBlockchainTransaction(
       // Network lookup failed or timed out — falls through to safe pending state
     }
 
-    // Default safe fallback: mark as pending for administrator review & verification
     return {
       verified: false,
       status: 'pending',
@@ -110,7 +108,6 @@ export async function verifyBlockchainTransaction(
       explorerUrl
     };
   } else {
-    // USDT TRC20 verification
     const explorerUrl = `https://tronscan.org/#/transaction/${cleanTx}`;
     try {
       const controller = new AbortController();

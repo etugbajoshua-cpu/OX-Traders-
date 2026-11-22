@@ -1,21 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext.tsx';
+import { getUserReferrals } from '../../lib/firestoreService.ts';
 import { Copy, Check, Gift, Award } from 'lucide-react';
 
 export const ReferralPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, firebaseUser } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
   const fetchReferralStats = async () => {
+    if (!firebaseUser || !user) return;
     try {
-      const res = await fetch('/api/referrals/stats');
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
-      }
+      setLoading(true);
+      const data = await getUserReferrals(firebaseUser.uid, user.referral_code);
+      setStats(data);
     } catch (err) {
       console.error('Failed to load referral stats:', err);
     } finally {
@@ -25,7 +25,7 @@ export const ReferralPage: React.FC = () => {
 
   useEffect(() => {
     fetchReferralStats();
-  }, []);
+  }, [firebaseUser, user?.referral_code]);
 
   const referralCode = stats?.referral_code || user?.referral_code || 'OX-INVESTOR';
   const referralLink = `${window.location.origin}?ref=${referralCode}`;

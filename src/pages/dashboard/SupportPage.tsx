@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { SupportTicket, SupportMessage } from '../../types/index.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
+import {
+  createSupportTicket,
+  getTicketMessages,
+  getUserTickets,
+  replyToSupportTicket,
+} from '../../lib/firestoreService.ts';
 import { Plus, Send, User, Shield, ChevronLeft } from 'lucide-react';
 
 export const SupportPage: React.FC = () => {
+  const { user, firebaseUser } = useAuth();
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -21,13 +29,11 @@ export const SupportPage: React.FC = () => {
   const [sendingReply, setSendingReply] = useState(false);
 
   const fetchTickets = async () => {
+    if (!firebaseUser) return;
     try {
       setLoading(true);
-      const res = await fetch('/api/support/tickets');
-      if (res.ok) {
-        const data = await res.json();
-        setTickets(data.tickets || []);
-      }
+      const list = await getUserTickets(firebaseUser.uid);
+      setTickets(list);
     } catch (err) {
       console.error('Failed to load tickets:', err);
     } finally {
@@ -38,11 +44,8 @@ export const SupportPage: React.FC = () => {
   const openTicketThread = async (ticket: SupportTicket) => {
     setSelectedTicket(ticket);
     try {
-      const res = await fetch(`/api/support/tickets/${ticket.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages || []);
-      }
+      const msgs = await getTicketMessages(String(ticket.id));
+      setMessages(msgs);
     } catch (err) {
       console.error('Failed to load ticket thread:', err);
     }
@@ -50,31 +53,27 @@ export const SupportPage: React.FC = () => {
 
   useEffect(() => {
     fetchTickets();
-  }, []);
+  }, [firebaseUser]);
 
   const handleCreateTicket = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!subject || !initialMessage) return;
+    if (!subject || !initialMessage || !firebaseUser || !user) return;
 
     setSubmittingTicket(true);
     try {
-      const res = await fetch('/api/support/tickets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          subject: subject.trim(),
-          category,
-          priority,
-          message: initialMessage.trim()
-        })
+      await createSupportTicket({
+        uid: firebaseUser.uid,
+        userEmail: user.email,
+        userName: user.full_name,
+        subject: subject.trim(),
+        category,
+        priority,
+        message: initialMessage.trim(),
       });
-
-      if (res.ok) {
-        setShowNewModal(false);
-        setSubject('');
-        setInitialMessage('');
-        await fetchTickets();
-      }
+      setShowNewModal(false);
+      setSubject('');
+      setInitialMessage('');
+      await fetchTickets();
     } catch (err) {
       console.error('Failed to open ticket:', err);
     } finally {
@@ -84,20 +83,18 @@ export const SupportPage: React.FC = () => {
 
   const handleSendReply = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!replyText || !selectedTicket) return;
+    if (!replyText || !selectedTicket || !user) return;
 
     setSendingReply(true);
     try {
-      const res = await fetch(`/api/support/tickets/${selectedTicket.id}/reply`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: replyText.trim() })
+      await replyToSupportTicket({
+        ticketId: String(selectedTicket.id),
+        senderName: user.full_name,
+        message: replyText.trim(),
+        currentMessageCount: messages.length || selectedTicket.message_count || 1,
       });
-
-      if (res.ok) {
-        setReplyText('');
-        await openTicketThread(selectedTicket);
-      }
+      setReplyText('');
+      await openTicketThread(selectedTicket);
     } catch (err) {
       console.error('Failed to send reply:', err);
     } finally {

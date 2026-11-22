@@ -1,6 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { QRCodeDisplay } from '../../components/common/QRCodeDisplay.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
+import {
+  DEFAULT_PLATFORM_SETTINGS,
+  getPublicPlatformSettings,
+  getUserDeposits,
+  submitDeposit
+} from '../../lib/firestoreService.ts';
 import {
   Copy,
   Check,
@@ -13,11 +19,12 @@ import {
 import { Deposit } from '../../types/index.ts';
 
 export const DepositPage: React.FC = () => {
-  const { refreshProfile } = useAuth();
+  const { user, firebaseUser, refreshProfile } = useAuth();
   const [selectedCurrency, setSelectedCurrency] = useState<'BTC' | 'USDT'>('BTC');
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState<Deposit[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [platformSettings, setPlatformSettings] = useState<Record<string, string>>(DEFAULT_PLATFORM_SETTINGS);
 
   // Form inputs
   const [amount, setAmount] = useState('');
@@ -26,19 +33,19 @@ export const DepositPage: React.FC = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Official deposit address specifications
+  // Official deposit address specifications synced with Firestore settings
   const depositAddresses = {
     BTC: {
-      address: 'bc1qg2a2gdxtccsxu83xy0jvezenutzyvmv4jl0uz4',
+      address: platformSettings.btc_deposit_address || 'bc1qg2a2gdxtccsxu83xy0jvezenutzyvmv4jl0uz4',
       network: 'Bitcoin',
-      minDeposit: '0.001 BTC',
+      minDeposit: `${platformSettings.btc_min_deposit || '0.001'} BTC`,
       confirmations: 3,
       warning: 'Send ONLY Bitcoin (BTC) via the native Bitcoin network. Do not send via Binance Smart Chain, Wrapped BTC, or Lightning. Funds sent via unsupported networks cannot be recovered.'
     },
     USDT: {
-      address: 'TB4Uq6VQMFMbDZUq3xK4jM8mqz6rb2TqGf',
+      address: platformSettings.usdt_deposit_address || 'TB4Uq6VQMFMbDZUq3xK4jM8mqz6rb2TqGf',
       network: 'TRON (TRC20)',
-      minDeposit: '50.0 USDT',
+      minDeposit: `${platformSettings.usdt_min_deposit || '50.0'} USDT`,
       confirmations: 19,
       warning: 'Send ONLY Tether (USDT) on the TRON TRC20 network (addresses start with "T"). Do not send ERC20, BEP20, Polygon, or Solana USDT to this address.'
     }
@@ -46,23 +53,23 @@ export const DepositPage: React.FC = () => {
 
   const currentConfig = depositAddresses[selectedCurrency];
 
-  const fetchHistory = async () => {
+  const fetchHistoryAndSettings = useCallback(async () => {
     try {
-      const res = await fetch('/api/deposits/history');
-      if (res.ok) {
-        const data = await res.json();
-        setHistory(data.deposits || []);
-      }
+      const settingsPromise = getPublicPlatformSettings();
+      const depsPromise = firebaseUser ? getUserDeposits(firebaseUser.uid) : Promise.resolve([]);
+      const [settings, deps] = await Promise.all([settingsPromise, depsPromise]);
+      setPlatformSettings(settings);
+      setHistory(deps);
     } catch (err) {
       console.error('Failed to fetch deposit history:', err);
     } finally {
       setLoadingHistory(false);
     }
-  };
+  }, [firebaseUser]);
 
   useEffect(() => {
-    fetchHistory();
-  }, []);
+    fetchHistoryAndSettings();
+  }, [fetchHistoryAndSettings]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(currentConfig.address);
@@ -76,40 +83,38 @@ export const DepositPage: React.FC = () => {
       setSubmitResult({ type: 'error', message: 'Deposit amount and transaction hash (TxID) are required' });
       return;
     }
+    if (!firebaseUser) {
+      setSubmitResult({ type: 'error', message: 'Please sign in to submit a deposit.' });
+      return;
+    }
 
     setSubmitting(true);
     setSubmitResult(null);
 
     try {
-      const res = await fetch('/api/deposits/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currency: selectedCurrency,
-          amount: parseFloat(amount),
-          tx_hash: txHash.trim(),
-          proof_note: proofNote
-        })
+      await submitDeposit({
+        uid: firebaseUser.uid,
+        userEmail: user?.email || firebaseUser.email || '',
+        userName: user?.full_name || firebaseUser.displayName || 'Investor',
+        currency: selectedCurrency,
+        network: currentConfig.network,
+        depositAddress: currentConfig.address,
+        amount: parseFloat(amount),
+        txHash: txHash.trim(),
+        proofNote: proofNote.trim()
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        setSubmitResult({ type: 'error', message: data.error || 'Deposit submission failed' });
-      } else {
-        setSubmitResult({
-          type: 'success',
-          message: data.status === 'confirmed'
-            ? 'Deposit confirmed on blockchain and credited directly to your balance!'
-            : 'Deposit received. Blockchain indexing nodes are verifying your transaction outputs.'
-        });
-        setAmount('');
-        setTxHash('');
-        setProofNote('');
-        await fetchHistory();
-        await refreshProfile();
-      }
+      setSubmitResult({
+        type: 'success',
+        message: 'Deposit received. Our treasury compliance nodes are verifying your transaction outputs.'
+      });
+      setAmount('');
+      setTxHash('');
+      setProofNote('');
+      await fetchHistoryAndSettings();
+      await refreshProfile();
     } catch (err: any) {
-      setSubmitResult({ type: 'error', message: err.message || 'Connection error' });
+      setSubmitResult({ type: 'error', message: err.message || 'Deposit submission failed' });
     } finally {
       setSubmitting(false);
     }

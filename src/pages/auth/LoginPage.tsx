@@ -1,199 +1,126 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import { Logo } from '../../components/common/Logo.tsx';
 import { useAuth } from '../../context/AuthContext.tsx';
-import { Lock, Mail, ArrowRight, ShieldCheck, AlertCircle } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ArrowRight, Lock } from 'lucide-react';
 
 interface LoginPageProps {
   onNavigate: (route: string) => void;
 }
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onNavigate }) => {
-  const { login } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { user, loginWithGoogle } = useAuth();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showForgotModal, setShowForgotModal] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotSent, setForgotSent] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) {
-      setError('Please provide your email address and password');
-      return;
+  useEffect(() => {
+    if (user) {
+      onNavigate('dashboard');
     }
+  }, [user, onNavigate]);
 
+  const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
-
-    const res = await login(email, password);
+    const res = await loginWithGoogle();
     setLoading(false);
 
     if (res.success) {
       onNavigate('dashboard');
-    } else {
-      setError(res.error || 'Authentication failed. Please verify your credentials.');
+    } else if (res.error) {
+      setError(res.error);
     }
   };
 
   return (
     <div className="min-h-screen bg-[#0B0E11] text-[#EAECEF] flex flex-col justify-center items-center px-4 py-8 sm:py-12 relative overflow-hidden">
-      {/* Brand Header */}
-      <div className="mb-6 sm:mb-8 text-center cursor-pointer select-none" onClick={() => onNavigate('home')}>
+      <div
+        className="mb-6 sm:mb-8 text-center cursor-pointer select-none"
+        onClick={() => onNavigate('home')}
+      >
         <Logo variant="default" size="lg" />
       </div>
 
-      <div className="w-full max-w-md bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10">
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-md bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 sm:p-8 shadow-2xl relative z-10 overflow-hidden"
+      >
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-[#F0B90B] to-transparent opacity-70" />
+
         <div className="mb-6">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-[#F0B90B]/10 border border-[#F0B90B]/25 text-[#F0B90B] text-[10px] font-bold uppercase tracking-wider mb-2">
+            <Lock className="w-3 h-3" />
+            <span>Encrypted Investor Access</span>
+          </div>
           <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-            Log In
+            Sign In to OX TRADERS
           </h2>
-          <p className="text-xs text-[#848E9C] mt-1.5">
-            Access your OX TRADERS investment portfolio and live trading assets.
+          <p className="text-xs text-[#848E9C] mt-1.5 leading-relaxed">
+            Access your permanent oxtraders.online portfolio, wallet custody balances, and algorithmic strategies.
           </p>
         </div>
 
         {error && (
-          <div className="mb-4 p-3.5 rounded-xl bg-[#F6465D]/10 border border-[#F6465D]/30 flex items-start gap-2.5 text-xs text-[#F6465D]">
+          <div className="mb-5 p-3.5 rounded-xl bg-[#F6465D]/10 border border-[#F6465D]/30 flex items-start gap-2.5 text-xs text-[#F6465D]">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{error}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#848E9C] mb-1.5">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
-                className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white placeholder-[#5E6673] text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-              />
-            </div>
-          </div>
-
-          <div>
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="block text-xs font-semibold text-[#848E9C]">
-                Password
-              </label>
-              <button
-                type="button"
-                onClick={() => setShowForgotModal(true)}
-                className="text-xs text-[#F0B90B] hover:underline font-medium"
-              >
-                Forgot Password?
-              </button>
-            </div>
-            <div className="relative">
-              <Lock className="w-4 h-4 text-[#848E9C] absolute left-3.5 top-3.5 pointer-events-none" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter password"
-                className="w-full pl-10 pr-4 py-3 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white placeholder-[#5E6673] text-sm focus:outline-none focus:border-[#F0B90B] transition-colors"
-              />
-            </div>
-          </div>
-
+        <div className="space-y-4">
           <button
-            type="submit"
+            type="button"
+            onClick={handleGoogleSignIn}
             disabled={loading}
-            className="w-full mt-2 py-3.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-sm tracking-wide transition-all flex items-center justify-center gap-2 active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-md"
+            className="w-full py-3.5 px-4 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] font-bold text-sm tracking-wide transition-all flex items-center justify-center gap-3 active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-lg"
           >
             {loading ? (
               <div className="w-4 h-4 border-2 border-[#0B0E11] border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <span>Log In</span>
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#0B0E11"
+                    d="M21.35 11.1H12v3.2h5.35c-.45 2.3-2.45 3.85-5.35 3.85a6.15 6.15 0 1 1 0-12.3c1.6 0 3.05.6 4.15 1.6l2.45-2.45A9.6 9.6 0 1 0 12 21.6c5.55 0 9.6-3.9 9.6-9.4 0-.35-.05-.75-.25-1.1Z"
+                  />
+                </svg>
+                <span>Continue with Google</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}
           </button>
-        </form>
+
+          <div className="p-3.5 rounded-xl bg-[#1E2329] border border-[#2B313A] flex items-start gap-2.5 text-[11px] text-[#848E9C] leading-relaxed">
+            <ShieldCheck className="w-4 h-4 text-[#0ECB81] shrink-0 mt-0.5" />
+            <span>
+              Your investor profile, wallet balances, and transaction history are stored permanently in cloud custody and tied securely to your verified Google account.
+            </span>
+          </div>
+        </div>
 
         <div className="mt-6 pt-5 border-t border-[#2B313A] text-center text-xs text-[#848E9C]">
-          <span>Don't have an account? </span>
+          <span>New to OX TRADERS? </span>
           <button
+            type="button"
             onClick={() => onNavigate('register')}
-            className="text-[#F0B90B] font-bold hover:underline ml-1"
+            className="text-[#F0B90B] font-bold hover:underline ml-1 cursor-pointer"
           >
-            Register Now
+            Create Personal Account
           </button>
         </div>
 
         <div className="mt-4 text-center">
           <button
+            type="button"
             onClick={() => onNavigate('home')}
-            className="text-xs text-[#848E9C] hover:text-white transition-colors"
+            className="text-xs text-[#848E9C] hover:text-white transition-colors cursor-pointer"
           >
             &larr; Back to Homepage
           </button>
         </div>
-      </div>
-
-      {/* Forgot Password Modal */}
-      {showForgotModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-[#181A20] border border-[#2B313A] rounded-2xl p-6 shadow-2xl">
-            <h3 className="text-base font-bold text-white mb-1">Reset Password</h3>
-            <p className="text-xs text-[#848E9C] mb-4">
-              Enter your registered email address to receive password reset instructions.
-            </p>
-
-            {forgotSent ? (
-              <div className="text-center py-4">
-                <div className="w-10 h-10 rounded-full bg-[#0ECB81]/15 text-[#0ECB81] flex items-center justify-center mx-auto mb-2">
-                  <ShieldCheck className="w-5 h-5" />
-                </div>
-                <div className="text-xs font-semibold text-white">Reset instructions sent</div>
-                <div className="text-[11px] text-[#848E9C] mt-1">If an account exists for {forgotEmail}, a reset email has been dispatched.</div>
-                <button
-                  onClick={() => setShowForgotModal(false)}
-                  className="mt-4 w-full py-2.5 rounded-xl bg-[#2B313A] hover:bg-[#363D47] text-xs font-semibold text-white"
-                >
-                  Close
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={(e) => { e.preventDefault(); setForgotSent(true); }} className="space-y-3">
-                <input
-                  type="email"
-                  required
-                  value={forgotEmail}
-                  onChange={(e) => setForgotEmail(e.target.value)}
-                  placeholder="name@example.com"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#1E2329] border border-[#2B313A] text-white text-sm focus:outline-none focus:border-[#F0B90B]"
-                />
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotModal(false)}
-                    className="flex-1 py-2.5 rounded-xl bg-[#2B313A] hover:bg-[#363D47] text-[#848E9C] text-xs font-semibold"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="flex-1 py-2.5 rounded-xl bg-[#F0B90B] hover:bg-[#FCD535] text-[#0B0E11] text-xs font-bold"
-                  >
-                    Send Link
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
+      </motion.div>
     </div>
   );
 };

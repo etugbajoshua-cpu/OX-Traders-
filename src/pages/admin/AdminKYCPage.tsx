@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { KYCRecord } from '../../types/index.ts';
+import { getAdminKycList, reviewKyc } from '../../lib/firestoreService.ts';
 import {
   FileText,
   RefreshCw,
@@ -20,12 +21,8 @@ export const AdminKYCPage: React.FC = () => {
   const fetchKycList = async () => {
     try {
       setLoading(true);
-      const url = statusFilter ? `/api/admin/kyc?status=${statusFilter}` : '/api/admin/kyc';
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        setKycList(data.kyc || []);
-      }
+      const list = await getAdminKycList(statusFilter || undefined);
+      setKycList(list);
     } catch (err) {
       console.error('Failed to load KYC applications:', err);
     } finally {
@@ -43,21 +40,15 @@ export const AdminKYCPage: React.FC = () => {
 
     setSubmittingReview(true);
     try {
-      const res = await fetch(`/api/admin/kyc/${selectedKyc.id}/review`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          status: reviewAction,
-          admin_note: adminNote.trim()
-        })
+      await reviewKyc({
+        uid: String(selectedKyc.user_id),
+        status: reviewAction,
+        adminNote: adminNote.trim(),
       });
-
-      if (res.ok) {
-        setReviewAction(null);
-        setSelectedKyc(null);
-        setAdminNote('');
-        await fetchKycList();
-      }
+      setReviewAction(null);
+      setSelectedKyc(null);
+      setAdminNote('');
+      await fetchKycList();
     } catch (err) {
       console.error(err);
     } finally {

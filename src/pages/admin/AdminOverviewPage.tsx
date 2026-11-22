@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { getAdminMetrics } from '../../lib/firestoreService.ts';
 import {
   Users,
   ArrowDownToLine,
@@ -19,11 +20,8 @@ export const AdminOverviewPage: React.FC<AdminOverviewPageProps> = ({ onNavigate
   const fetchMetrics = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/admin/metrics');
-      if (res.ok) {
-        const data = await res.json();
-        setMetrics(data);
-      }
+      const data = await getAdminMetrics();
+      setMetrics(data);
     } catch (err) {
       console.error('Failed to load admin metrics:', err);
     } finally {
