@@ -128,7 +128,78 @@ export const DEFAULT_PLATFORM_SETTINGS: Record<string, string> = {
   referral_commission_percent: '5.0',
   kyc_mandatory_for_withdrawal: 'true',
   maintenance_mode: 'false',
+  withdrawal_toast_enabled: 'true',
+  withdrawal_toast_demo_enabled: import.meta.env.DEV ? 'true' : 'false',
+  withdrawal_toast_statuses: 'completed,processing',
+  withdrawal_toast_duration_sec: '6',
+  withdrawal_toast_min_interval_sec: '5',
+  withdrawal_toast_max_interval_sec: '40',
 };
+
+export function maskIdentifier(raw: string | null | undefined): string {
+  const input = String(raw || '').trim();
+  if (!input) return 'inv******@oxtraders.online';
+  if (input.includes('@')) {
+    const [localPart, domainPart] = input.split('@');
+    const cleanLocal = (localPart || 'inv').trim();
+    const cleanDomain = (domainPart || 'gmail.com').trim();
+    const prefixLen = cleanLocal.length <= 2 ? 1 : Math.min(3, cleanLocal.length - 1);
+    return `${cleanLocal.slice(0, prefixLen)}******@${cleanDomain}`.slice(0, 64);
+  }
+  const prefixLen = input.length <= 2 ? 1 : Math.min(3, input.length - 1);
+  return `${input.slice(0, prefixLen)}******`.slice(0, 64);
+}
+
+function estimateUsdWithdrawalAmount(currency: string, amount: number): number {
+  const cleanAmount = Math.max(0.000001, Number(amount || 0));
+  if (currency === 'BTC') {
+    return Math.max(1, roundUsd(cleanAmount * 91420));
+  }
+  return Math.max(1, roundUsd(cleanAmount));
+}
+
+export interface PublicWithdrawalFeedItem {
+  id: string;
+  maskedIdentifier: string;
+  amountUsd: number;
+  cryptoAmount: number;
+  currency: 'BTC' | 'USDT' | 'USD';
+  status: 'approved' | 'processing' | 'completed';
+  processedAt: string;
+}
+
+export async function getPublicWithdrawalFeed(
+  allowedStatuses: string[] = ['completed', 'processing']
+): Promise<PublicWithdrawalFeedItem[]> {
+  const path = 'public_withdrawal_feed';
+  const validStatuses = allowedStatuses.filter((s) =>
+    ['approved', 'processing', 'completed'].includes(s)
+  );
+  if (validStatuses.length === 0) return [];
+
+  try {
+    const q = query(collection(db, path), where('status', 'in', validStatuses));
+    const snap = await getDocs(q);
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          maskedIdentifier: String(data.maskedIdentifier || 'inv******@gmail.com'),
+          amountUsd: Number(data.amountUsd || 0),
+          cryptoAmount: Number(data.cryptoAmount || 0),
+          currency: (data.currency as 'BTC' | 'USDT' | 'USD') || 'USDT',
+          status: (data.status as 'approved' | 'processing' | 'completed') || 'completed',
+          processedAt: toIso(data.processedAt),
+        };
+      })
+      .filter((item) => item.amountUsd > 0 && item.maskedIdentifier.includes('***'))
+      .sort((a, b) => new Date(b.processedAt).getTime() - new Date(a.processedAt).getTime())
+      .slice(0, 40);
+  } catch {
+    return [];
+  }
+}
 
 export const DEFAULT_PLANS: InvestmentPlan[] = [
   {
@@ -1781,11 +1852,28 @@ export async function getAdminWithdrawals(statusFilter?: string): Promise<Withdr
 export async function approveWithdrawal(withdrawalId: string): Promise<void> {
   const path = `withdrawals/${withdrawalId}`;
   try {
-    await updateDoc(doc(db, 'withdrawals', withdrawalId), {
+    const wthRef = doc(db, 'withdrawals', withdrawalId);
+    const wthSnap = await getDoc(wthRef);
+    await updateDoc(wthRef, {
       status: 'processing',
       adminNote: 'Approved for blockchain payout broadcasting.',
       updatedAt: serverTimestamp(),
     });
+
+    if (wthSnap.exists()) {
+      const wth = wthSnap.data();
+      const currency = (wth.currency as 'BTC' | 'USDT') || 'USDT';
+      const cryptoAmount = Math.max(0.000001, Number(wth.netAmount || wth.amount || 1));
+      await setDoc(doc(db, 'public_withdrawal_feed', withdrawalId), {
+        maskedIdentifier: maskIdentifier(String(wth.userEmail || wth.userName || 'investor@oxtraders.online')),
+        amountUsd: estimateUsdWithdrawalAmount(currency, cryptoAmount),
+        cryptoAmount,
+        currency,
+        status: 'processing',
+        processedAt: serverTimestamp(),
+      });
+    }
+
     await writeAuditLog({
       action: 'WITHDRAWAL_APPROVED',
       targetType: 'withdrawal',
@@ -1803,6 +1891,7 @@ export async function completeWithdrawal(
 ): Promise<void> {
   const wthRef = doc(db, 'withdrawals', withdrawalId);
   const notifRef = doc(collection(db, 'notifications'));
+  const feedRef = doc(db, 'public_withdrawal_feed', withdrawalId);
   const cleanHash = clamp(payoutTxHash, 140);
   let logDetails = '';
 
@@ -1816,6 +1905,7 @@ export async function completeWithdrawal(
       const currency = wth.currency as 'BTC' | 'USDT';
       const round = currency === 'BTC' ? roundCrypto : roundUsd;
       const amount = round(wth.amount);
+      const netAmount = Math.max(0.000001, Number(wth.netAmount || wth.amount || 1));
 
       const walletRef = doc(db, 'wallets', uid);
       const wSnap = await tx.get(walletRef);
@@ -1847,6 +1937,15 @@ export async function completeWithdrawal(
         isRead: false,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      });
+
+      tx.set(feedRef, {
+        maskedIdentifier: maskIdentifier(String(wth.userEmail || wth.userName || 'investor@oxtraders.online')),
+        amountUsd: estimateUsdWithdrawalAmount(currency, netAmount),
+        cryptoAmount: netAmount,
+        currency,
+        status: 'completed',
+        processedAt: serverTimestamp(),
       });
 
       logDetails = `Completed ${wth.netAmount} ${currency} withdrawal (${cleanHash})`;
@@ -1929,6 +2028,8 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string): Pr
       logDetails = `Rejected withdrawal ${withdrawalId} (${amount} ${currency}). Refunded. Reason: ${reason}`;
     });
 
+    await deleteDoc(doc(db, 'public_withdrawal_feed', withdrawalId)).catch(() => {});
+
     await writeAuditLog({
       action: 'WITHDRAWAL_REJECTED',
       targetType: 'withdrawal',
@@ -1937,6 +2038,44 @@ export async function rejectWithdrawal(withdrawalId: string, reason: string): Pr
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, `withdrawals/${withdrawalId}`);
+  }
+}
+
+export async function syncVerifiedWithdrawalsToPublicFeed(): Promise<number> {
+  const path = 'withdrawals';
+  try {
+    const snap = await getDocs(collection(db, path));
+    const verifiedDocs = snap.docs.filter((d) => {
+      const status = String(d.data().status || '');
+      return ['approved', 'processing', 'completed'].includes(status);
+    });
+
+    if (verifiedDocs.length === 0) return 0;
+
+    const batch = writeBatch(db);
+    for (const d of verifiedDocs) {
+      const wth = d.data();
+      const currency = (wth.currency as 'BTC' | 'USDT') || 'USDT';
+      const cryptoAmount = Math.max(0.000001, Number(wth.netAmount || wth.amount || 1));
+      batch.set(doc(db, 'public_withdrawal_feed', d.id), {
+        maskedIdentifier: maskIdentifier(String(wth.userEmail || wth.userName || 'investor@oxtraders.online')),
+        amountUsd: estimateUsdWithdrawalAmount(currency, cryptoAmount),
+        cryptoAmount,
+        currency,
+        status: String(wth.status) as 'approved' | 'processing' | 'completed',
+        processedAt: serverTimestamp(),
+      });
+    }
+    await batch.commit();
+
+    await writeAuditLog({
+      action: 'WITHDRAWAL_FEED_SYNCED',
+      targetType: 'public_withdrawal_feed',
+      details: `Synchronized ${verifiedDocs.length} verified withdrawal records to the zero-PII public feed.`,
+    });
+    return verifiedDocs.length;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, 'public_withdrawal_feed');
   }
 }
 
@@ -2168,6 +2307,17 @@ export async function getAdminSettingsAndStats() {
 
 export async function saveAdminSettings(settingsMap: Record<string, string>): Promise<void> {
   const path = 'platform_settings/public';
+  const durationNum = Math.min(20, Math.max(3, Math.round(Number(settingsMap.withdrawal_toast_duration_sec || 6))));
+  const minIntervalNum = Math.min(180, Math.max(3, Math.round(Number(settingsMap.withdrawal_toast_min_interval_sec || 5))));
+  const maxIntervalNum = Math.min(
+    300,
+    Math.max(minIntervalNum, Math.round(Number(settingsMap.withdrawal_toast_max_interval_sec || 40)))
+  );
+  const rawStatuses = String(settingsMap.withdrawal_toast_statuses || 'completed,processing')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => ['approved', 'processing', 'completed'].includes(s));
+
   const payload = {
     company_name: clamp(settingsMap.company_name || 'OX TRADERS', 80),
     support_email: clamp(settingsMap.support_email || 'support@oxtraders.online', 120),
@@ -2189,6 +2339,15 @@ export async function saveAdminSettings(settingsMap: Record<string, string>): Pr
     kyc_mandatory_for_withdrawal:
       settingsMap.kyc_mandatory_for_withdrawal === 'false' ? 'false' : 'true',
     maintenance_mode: settingsMap.maintenance_mode === 'true' ? 'true' : 'false',
+    withdrawal_toast_enabled: settingsMap.withdrawal_toast_enabled === 'false' ? 'false' : 'true',
+    withdrawal_toast_demo_enabled: settingsMap.withdrawal_toast_demo_enabled === 'true' ? 'true' : 'false',
+    withdrawal_toast_statuses: clamp(
+      (rawStatuses.length > 0 ? rawStatuses : ['completed', 'processing']).join(','),
+      64
+    ),
+    withdrawal_toast_duration_sec: String(durationNum),
+    withdrawal_toast_min_interval_sec: String(minIntervalNum),
+    withdrawal_toast_max_interval_sec: String(maxIntervalNum),
     updatedAt: serverTimestamp(),
   };
 
@@ -2198,7 +2357,7 @@ export async function saveAdminSettings(settingsMap: Record<string, string>): Pr
       action: 'PLATFORM_SETTINGS_UPDATED',
       targetType: 'platform_settings',
       targetId: 'public',
-      details: 'Updated custodial deposit addresses, minimums, fees, and compliance settings.',
+      details: 'Updated custodial deposit addresses, withdrawal notification controls, and compliance settings.',
     });
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, path);

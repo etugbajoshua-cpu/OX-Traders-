@@ -36,6 +36,7 @@ import { AdminSettingsPage } from './pages/admin/AdminSettingsPage.tsx';
 import { AdminAuditLogsPage } from './pages/admin/AdminAuditLogsPage.tsx';
 
 import { LoadingScreen, PageTransitionLoader } from './components/common/LoadingScreen.tsx';
+import { FloatingWithdrawalNotifications } from './components/common/FloatingWithdrawalNotifications.tsx';
 
 const ROUTE_LABELS: Record<string, { title: string; subtitle: string }> = {
   home: { title: 'OX TRADERS Home', subtitle: 'oxtraders.online' },
@@ -344,6 +345,7 @@ function AppContent() {
         subtitle={transition.subtitle}
         transitionKey={transition.key}
       />
+      <FloatingWithdrawalNotifications currentView={currentView} />
       {viewNode}
     </>
   );

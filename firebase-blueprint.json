@@ -270,9 +270,29 @@
         "referral_commission_percent": { "type": "string", "maxLength": 16 },
         "kyc_mandatory_for_withdrawal": { "type": "string", "enum": ["true", "false"] },
         "maintenance_mode": { "type": "string", "enum": ["true", "false"] },
+        "withdrawal_toast_enabled": { "type": "string", "enum": ["true", "false"] },
+        "withdrawal_toast_demo_enabled": { "type": "string", "enum": ["true", "false"] },
+        "withdrawal_toast_statuses": { "type": "string", "maxLength": 64 },
+        "withdrawal_toast_duration_sec": { "type": "string", "maxLength": 8 },
+        "withdrawal_toast_min_interval_sec": { "type": "string", "maxLength": 8 },
+        "withdrawal_toast_max_interval_sec": { "type": "string", "maxLength": 8 },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["btc_deposit_address", "usdt_deposit_address", "updatedAt"]
+    },
+    "PublicWithdrawalFeed": {
+      "title": "PublicWithdrawalFeed",
+      "description": "Sanitized, zero-PII public feed of verified processed/completed withdrawals for floating activity notifications.",
+      "type": "object",
+      "properties": {
+        "maskedIdentifier": { "type": "string", "minLength": 4, "maxLength": 64 },
+        "amountUsd": { "type": "number" },
+        "cryptoAmount": { "type": "number" },
+        "currency": { "type": "string", "enum": ["BTC", "USDT", "USD"] },
+        "status": { "type": "string", "enum": ["approved", "processing", "completed"] },
+        "processedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["maskedIdentifier", "amountUsd", "cryptoAmount", "currency", "status", "processedAt"]
     },
     "AdminUser": {
       "title": "AdminUser",
@@ -360,6 +380,10 @@
     "/referral_codes/{code}": {
       "schema": { "$ref": "#/entities/ReferralDirectoryEntry" },
       "description": "Public referral code lookup mapping (UID only, no PII)."
+    },
+    "/public_withdrawal_feed/{feedId}": {
+      "schema": { "$ref": "#/entities/PublicWithdrawalFeed" },
+      "description": "Zero-PII sanitized feed of verified approved, processing, and completed withdrawals."
     }
   }
 }

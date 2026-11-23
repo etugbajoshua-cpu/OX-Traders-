@@ -338,7 +338,11 @@ service cloud.firestore {
           'company_name', 'support_email', 'btc_deposit_address', 'usdt_deposit_address',
           'btc_min_deposit', 'usdt_min_deposit', 'btc_min_withdrawal', 'usdt_min_withdrawal',
           'btc_withdrawal_fee', 'usdt_withdrawal_fee', 'referral_commission_percent',
-          'kyc_mandatory_for_withdrawal', 'maintenance_mode', 'updatedAt'
+          'kyc_mandatory_for_withdrawal', 'maintenance_mode',
+          'withdrawal_toast_enabled', 'withdrawal_toast_demo_enabled',
+          'withdrawal_toast_statuses', 'withdrawal_toast_duration_sec',
+          'withdrawal_toast_min_interval_sec', 'withdrawal_toast_max_interval_sec',
+          'updatedAt'
         ])
         && data.btc_deposit_address is string && data.btc_deposit_address.size() >= 10 && data.btc_deposit_address.size() <= 128
         && data.usdt_deposit_address is string && data.usdt_deposit_address.size() >= 10 && data.usdt_deposit_address.size() <= 128
@@ -353,7 +357,31 @@ service cloud.firestore {
         && (!('referral_commission_percent' in data) || (data.referral_commission_percent is string && data.referral_commission_percent.size() <= 16))
         && (!('kyc_mandatory_for_withdrawal' in data) || data.kyc_mandatory_for_withdrawal in ['true', 'false'])
         && (!('maintenance_mode' in data) || data.maintenance_mode in ['true', 'false'])
+        && (!('withdrawal_toast_enabled' in data) || data.withdrawal_toast_enabled in ['true', 'false'])
+        && (!('withdrawal_toast_demo_enabled' in data) || data.withdrawal_toast_demo_enabled in ['true', 'false'])
+        && (!('withdrawal_toast_statuses' in data) || (data.withdrawal_toast_statuses is string && data.withdrawal_toast_statuses.size() <= 64))
+        && (!('withdrawal_toast_duration_sec' in data) || (data.withdrawal_toast_duration_sec is string && data.withdrawal_toast_duration_sec.size() <= 8))
+        && (!('withdrawal_toast_min_interval_sec' in data) || (data.withdrawal_toast_min_interval_sec is string && data.withdrawal_toast_min_interval_sec.size() <= 8))
+        && (!('withdrawal_toast_max_interval_sec' in data) || (data.withdrawal_toast_max_interval_sec is string && data.withdrawal_toast_max_interval_sec.size() <= 8))
         && data.updatedAt is timestamp;
+    }
+
+    function isValidPublicWithdrawalFeed(data) {
+      return data.keys().hasAll([
+          'maskedIdentifier', 'amountUsd', 'cryptoAmount', 'currency', 'status', 'processedAt'
+        ])
+        && data.keys().hasOnly([
+          'maskedIdentifier', 'amountUsd', 'cryptoAmount', 'currency', 'status', 'processedAt'
+        ])
+        && data.maskedIdentifier is string
+        && data.maskedIdentifier.size() >= 4
+        && data.maskedIdentifier.size() <= 64
+        && data.maskedIdentifier.matches('^.*\\*\\*\\*.*$')
+        && data.amountUsd is number && data.amountUsd > 0
+        && data.cryptoAmount is number && data.cryptoAmount > 0
+        && data.currency in ['BTC', 'USDT', 'USD']
+        && data.status in ['approved', 'processing', 'completed']
+        && data.processedAt is timestamp;
     }
 
     function isValidAdminUser(data) {
@@ -738,6 +766,18 @@ service cloud.firestore {
         && incoming().uid == request.auth.uid
         && incoming().createdAt == request.time;
       allow update, delete: if false;
+    }
+
+    // 16. Zero-PII Public Verified Withdrawal Activity Feed
+    match /public_withdrawal_feed/{feedId} {
+      allow get: if isValidId(feedId) && resource.data.status in ['approved', 'processing', 'completed'];
+      allow list: if resource.data.status in ['approved', 'processing', 'completed'];
+      allow create, update: if isValidId(feedId)
+        && isVerifiedOrAdmin()
+        && isAdmin()
+        && isValidPublicWithdrawalFeed(incoming())
+        && incoming().processedAt == request.time;
+      allow delete: if isValidId(feedId) && isAdmin();
     }
   }
 }
