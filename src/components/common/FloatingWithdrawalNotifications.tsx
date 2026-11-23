@@ -205,7 +205,7 @@ export const WithdrawalNotificationCard: React.FC<WithdrawalNotificationCardProp
     <div
       role="status"
       aria-live="polite"
-      className="relative w-full max-w-[356px] overflow-hidden rounded-2xl bg-[#11141A]/96 backdrop-blur-md border border-[#F0B90B]/40 shadow-[0_18px_45px_-12px_rgba(0,0,0,0.85)] text-white"
+      className="relative w-full max-w-[356px] overflow-hidden rounded-2xl bg-[#11141A]/95 backdrop-blur-md border border-[#F0B90B]/40 shadow-[0_18px_45px_-12px_rgba(0,0,0,0.85)] text-white"
     >
       {/* Top subtle yellow highlight hairline */}
       <div className="h-[2px] w-full bg-gradient-to-r from-[#F0B90B] via-[#FCD535] to-transparent opacity-90" />
@@ -495,24 +495,26 @@ export const FloatingWithdrawalNotifications: React.FC<FloatingWithdrawalNotific
     }
   };
 
-  // Safe non-obstructive placement tailored to DashboardLayout vs Public/Auth views
+  // Safe non-obstructive top placement below sticky headers on Public & Dashboard views
   const positionClasses =
     currentView === 'dashboard'
-      ? 'bottom-20 left-3 right-3 sm:right-auto sm:left-4 lg:bottom-6 lg:left-[17.5rem]'
-      : 'bottom-4 left-3 right-3 sm:right-auto sm:bottom-6 sm:left-6';
+      ? 'top-[4.5rem] left-3 right-3 sm:right-auto sm:left-4 lg:left-[17.5rem]'
+      : currentView === 'public'
+        ? 'top-[4.5rem] left-3 right-3 sm:right-auto sm:top-[5.5rem] sm:left-6'
+        : 'top-4 left-3 right-3 sm:right-auto sm:top-6 sm:left-6';
 
   return (
     <div
-      className={`fixed z-40 pointer-events-none flex justify-start ${positionClasses}`}
+      className={`fixed z-50 pointer-events-none flex justify-start ${positionClasses}`}
       aria-label="Recent withdrawal activity"
     >
       <AnimatePresence mode="wait">
         {activeToast && (
           <motion.div
             key={activeToast.item.id}
-            initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: -24, y: 12, scale: 0.97 }}
+            initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: -16, y: -14, scale: 0.97 }}
             animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, x: 0, y: 0, scale: 1 }}
-            exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: -16, y: 8, scale: 0.98 }}
+            exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, x: -12, y: -10, scale: 0.98 }}
             transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
             className="pointer-events-auto w-full sm:w-auto"
           >

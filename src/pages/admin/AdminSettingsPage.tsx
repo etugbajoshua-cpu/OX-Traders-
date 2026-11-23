@@ -524,7 +524,7 @@ export const AdminSettingsPage: React.FC = () => {
           </div>
 
           <p className="text-xs text-[#848E9C] leading-relaxed">
-            Display animated, zero-PII withdrawal pop-up cards near the bottom-left corner across OX TRADERS. Live production popups only surface masked verified payouts from <span className="font-mono text-white">/public_withdrawal_feed</span> and never expose full emails or wallet addresses.
+            Display animated, zero-PII withdrawal pop-up cards near the top-left corner across OX TRADERS. Live production popups only surface masked verified payouts from <span className="font-mono text-white">/public_withdrawal_feed</span> and never expose full emails or wallet addresses.
           </p>
 
           {/* Master & Demo Mode Toggles */}
@@ -651,7 +651,7 @@ export const AdminSettingsPage: React.FC = () => {
               <div>
                 <div className="text-xs font-bold text-white">Notification Card Preview</div>
                 <div className="text-[11px] text-[#848E9C]">
-                  Inspect live OX TRADERS styling or trigger an animated popup at the bottom-left corner.
+                  Inspect live OX TRADERS styling or trigger an animated popup at the top-left corner.
                 </div>
               </div>
 

@@ -129,7 +129,7 @@ export const DEFAULT_PLATFORM_SETTINGS: Record<string, string> = {
   kyc_mandatory_for_withdrawal: 'true',
   maintenance_mode: 'false',
   withdrawal_toast_enabled: 'true',
-  withdrawal_toast_demo_enabled: import.meta.env.DEV ? 'true' : 'false',
+  withdrawal_toast_demo_enabled: 'true',
   withdrawal_toast_statuses: 'completed,processing',
   withdrawal_toast_duration_sec: '6',
   withdrawal_toast_min_interval_sec: '5',
