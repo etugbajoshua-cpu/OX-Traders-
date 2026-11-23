@@ -27,9 +27,13 @@ service cloud.firestore {
 
     function isAdmin() {
       return isSuperAdmin() || (
-        isVerifiedUser() &&
+        isSignedIn() &&
         exists(/databases/$(database)/documents/admins/$(request.auth.uid))
       );
+    }
+
+    function isVerifiedOrAdmin() {
+      return isVerifiedUser() || isAdmin();
     }
 
     function incoming() {
@@ -376,9 +380,9 @@ service cloud.firestore {
     // 1. Users (PII Restricted to Owner or Admin)
     match /users/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.uid == request.auth.uid);
       allow create: if isValidId(userId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isOwner(userId)
         && isValidUser(incoming())
         && incoming().uid == request.auth.uid
@@ -388,7 +392,7 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(userId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidUser(incoming())
         && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
@@ -405,9 +409,9 @@ service cloud.firestore {
     // 2. Wallets (Balance Conservation Guard: Users can NEVER increase total balances)
     match /wallets/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(userId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidWallet(incoming())
         && incoming().userId == userId
         && incoming().updatedAt == request.time
@@ -423,7 +427,7 @@ service cloud.firestore {
           )
         );
       allow update: if isValidId(userId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidWallet(incoming())
         && incoming().userId == existing().userId
         && incoming().updatedAt == request.time
@@ -444,9 +448,9 @@ service cloud.firestore {
     // 3. Immutable Double-Entry Ledger Transactions
     match /transactions/{transactionId} {
       allow get: if isValidId(transactionId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(transactionId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidTransaction(incoming())
         && incoming().createdAt == request.time
         && (
@@ -462,16 +466,16 @@ service cloud.firestore {
     // 4. Deposits (User creates pending; only Admin confirms/rejects; terminal state locked)
     match /deposits/{depositId} {
       allow get: if isValidId(depositId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(depositId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidDeposit(incoming())
         && incoming().userId == request.auth.uid
         && incoming().status == 'pending'
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(depositId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidDeposit(incoming())
         && isAdmin()
         && existing().status in ['pending', 'verifying']
@@ -485,16 +489,16 @@ service cloud.firestore {
     // 5. Withdrawals (User creates pending; only Admin processes/completes/rejects)
     match /withdrawals/{withdrawalId} {
       allow get: if isValidId(withdrawalId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(withdrawalId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidWithdrawal(incoming())
         && incoming().userId == request.auth.uid
         && incoming().status == 'pending'
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(withdrawalId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidWithdrawal(incoming())
         && isAdmin()
         && existing().status in ['pending', 'under_review', 'approved', 'processing']
@@ -508,14 +512,14 @@ service cloud.firestore {
     // 6. Investment Plans (Non-PII Public Catalog)
     match /investment_plans/{planId} {
       allow get: if isValidId(planId) && (resource.data.isActive == true || isAdmin());
-      allow list: if resource.data.isActive == true || isSuperAdmin();
+      allow list: if resource.data.isActive == true || isAdmin();
       allow create: if isValidId(planId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isAdmin()
         && isValidInvestmentPlan(incoming())
         && incoming().updatedAt == request.time;
       allow update: if isValidId(planId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isAdmin()
         && isValidInvestmentPlan(incoming())
         && incoming().slug == existing().slug
@@ -526,9 +530,9 @@ service cloud.firestore {
     // 7. Investor Positions
     match /investments/{investmentId} {
       allow get: if isValidId(investmentId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(investmentId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidInvestment(incoming())
         && incoming().userId == request.auth.uid
         && incoming().status == 'active'
@@ -539,7 +543,7 @@ service cloud.firestore {
         )
         && incoming().createdAt == request.time;
       allow update: if isValidId(investmentId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidInvestment(incoming())
         && isAdmin()
         && incoming().userId == existing().userId
@@ -551,9 +555,9 @@ service cloud.firestore {
     // 8. KYC Records (Strict Owner / Admin PII Protection)
     match /kyc_records/{userId} {
       allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
-      allow list: if isSuperAdmin();
+      allow list: if isAdmin();
       allow create: if isValidId(userId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isOwner(userId)
         && isValidKycRecord(incoming())
         && incoming().userId == request.auth.uid
@@ -561,7 +565,7 @@ service cloud.firestore {
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(userId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidKycRecord(incoming())
         && incoming().userId == existing().userId
         && incoming().createdAt == existing().createdAt
@@ -589,20 +593,20 @@ service cloud.firestore {
         resource.data.referredId == request.auth.uid ||
         isAdmin()
       );
-      allow list: if isSuperAdmin() || (
+      allow list: if isAdmin() || (
         isSignedIn() && (
           resource.data.referrerId == request.auth.uid ||
           resource.data.referredId == request.auth.uid
         )
       );
       allow create: if isValidId(referralId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidReferral(incoming())
         && incoming().referredId == request.auth.uid
         && incoming().totalCommission == 0
         && incoming().createdAt == request.time;
       allow update: if isValidId(referralId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidReferral(incoming())
         && isAdmin()
         && incoming().referrerId == existing().referrerId
@@ -615,15 +619,15 @@ service cloud.firestore {
     // 10. Notifications
     match /notifications/{notificationId} {
       allow get: if isValidId(notificationId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(notificationId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidNotification(incoming())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && (isAdmin() || (incoming().userId == request.auth.uid && incoming().isRead == false));
       allow update: if isValidId(notificationId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidNotification(incoming())
         && incoming().userId == existing().userId
         && incoming().createdAt == existing().createdAt
@@ -635,16 +639,16 @@ service cloud.firestore {
     // 11. Support Tickets & Messages Subcollection (Master Gate Pattern)
     match /support_tickets/{ticketId} {
       allow get: if isValidId(ticketId) && isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow create: if isValidId(ticketId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidSupportTicket(incoming())
         && incoming().userId == request.auth.uid
         && incoming().status == 'open'
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
       allow update: if isValidId(ticketId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidSupportTicket(incoming())
         && incoming().userId == existing().userId
         && incoming().createdAt == existing().createdAt
@@ -663,11 +667,11 @@ service cloud.firestore {
           get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.userId == request.auth.uid || isAdmin()
         );
         allow list: if isSignedIn() && (
-          isSuperAdmin() ||
+          isAdmin() ||
           get(/databases/$(database)/documents/support_tickets/$(ticketId)).data.userId == request.auth.uid
         );
         allow create: if isValidId(ticketId) && isValidId(messageId)
-          && isVerifiedUser()
+          && isVerifiedOrAdmin()
           && isValidSupportMessage(incoming())
           && incoming().ticketId == ticketId
           && incoming().createdAt == request.time
@@ -687,9 +691,9 @@ service cloud.firestore {
     // 12. Admin Audit Logs (Admin-Only Immutable)
     match /admin_audit_logs/{logId} {
       allow get: if isValidId(logId) && isAdmin();
-      allow list: if isSuperAdmin();
+      allow list: if isAdmin();
       allow create: if isValidId(logId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isAdmin()
         && isValidAdminAuditLog(incoming())
         && incoming().adminId == request.auth.uid
@@ -701,24 +705,24 @@ service cloud.firestore {
     // 13. Platform Settings (Public addresses & fees; Admin write-only)
     match /platform_settings/{settingId} {
       allow get: if isValidId(settingId) && (settingId == 'public' || isAdmin());
-      allow list: if isSuperAdmin();
+      allow list: if isAdmin();
       allow create: if isValidId(settingId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isAdmin()
         && isValidPlatformSettings(incoming())
         && incoming().updatedAt == request.time;
       allow update: if isValidId(settingId)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isAdmin()
         && isValidPlatformSettings(incoming())
         && incoming().updatedAt == request.time;
       allow delete: if false;
     }
 
-    // 14. Admin UID Directory
+    // 14. Admin UID Directory (Managed by Super Admin)
     match /admins/{uid} {
-      allow get: if isValidId(uid) && (isOwner(uid) || isSuperAdmin());
-      allow list: if isSuperAdmin();
+      allow get: if isValidId(uid) && (isOwner(uid) || isAdmin());
+      allow list: if isAdmin();
       allow create, update, delete: if isValidId(uid)
         && isSuperAdmin()
         && (request.method == 'delete' || isValidAdminUser(incoming()));
@@ -727,9 +731,9 @@ service cloud.firestore {
     // 15. Minimal Referral Code Lookup (UID only, zero PII)
     match /referral_codes/{code} {
       allow get: if isValidId(code) && isSignedIn();
-      allow list: if isSuperAdmin();
+      allow list: if isAdmin();
       allow create: if isValidId(code)
-        && isVerifiedUser()
+        && isVerifiedOrAdmin()
         && isValidReferralDirectory(incoming())
         && incoming().uid == request.auth.uid
         && incoming().createdAt == request.time;

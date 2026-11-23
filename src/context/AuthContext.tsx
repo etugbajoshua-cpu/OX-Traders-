@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, onSnapshot, query, where } from 'firebase/firestore';
 import { auth, db, googleProvider, handleFirestoreError, OperationType } from '../lib/firebase.ts';
 import {
   ensureUserAccount,
@@ -101,6 +101,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       try {
+        if (!fbUser.emailVerified) {
+          const adminSnap = await getDoc(doc(db, 'admins', fbUser.uid));
+          if (!adminSnap.exists()) {
+            setUser(null);
+            setBalances(EMPTY_BALANCES);
+            setLoading(false);
+            return;
+          }
+        }
         await hydrateUser(fbUser);
       } catch (err) {
         console.error('Failed to hydrate Firebase investor account:', err);
@@ -114,7 +123,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Attach real-time Firestore listeners ONLY after auth is ready and user signed in
   useEffect(() => {
-    if (!authReady || !firebaseUser) return;
+    if (!authReady || !firebaseUser || !user) return;
     const uid = firebaseUser.uid;
 
     const unsubUser = onSnapshot(
@@ -172,7 +181,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       unsubKyc();
       unsubNotifs();
     };
-  }, [authReady, firebaseUser]);
+  }, [authReady, firebaseUser, user?.id]);
 
   const loginWithGoogle = async (options?: {
     country?: string;

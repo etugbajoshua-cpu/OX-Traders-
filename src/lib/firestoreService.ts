@@ -2,6 +2,7 @@ import { User as FirebaseUser } from 'firebase/auth';
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -210,8 +211,14 @@ export const DEFAULT_PLANS: InvestmentPlan[] = [
 
 let seedingPromise: Promise<void> | null = null;
 
-export async function seedFirestoreDefaultsIfAdmin(firebaseUser: FirebaseUser): Promise<void> {
-  if (!firebaseUser.emailVerified || !isSuperAdminEmail(firebaseUser.email)) return;
+export async function seedFirestoreDefaultsIfAdmin(
+  firebaseUser: FirebaseUser,
+  isAuthorizedAdmin = false
+): Promise<void> {
+  const canSeed =
+    isAuthorizedAdmin ||
+    (!!firebaseUser.emailVerified && isSuperAdminEmail(firebaseUser.email));
+  if (!canSeed) return;
   if (seedingPromise) return seedingPromise;
 
   seedingPromise = (async () => {
@@ -260,15 +267,18 @@ export async function seedFirestoreDefaultsIfAdmin(firebaseUser: FirebaseUser): 
 }
 
 export async function verifyAdminAccess(firebaseUser: FirebaseUser): Promise<boolean> {
-  if (!firebaseUser.emailVerified) return false;
-  if (isSuperAdminEmail(firebaseUser.email)) {
-    await seedFirestoreDefaultsIfAdmin(firebaseUser);
+  if (firebaseUser.emailVerified && isSuperAdminEmail(firebaseUser.email)) {
+    await seedFirestoreDefaultsIfAdmin(firebaseUser, true);
     return true;
   }
   const path = `admins/${firebaseUser.uid}`;
   try {
     const snap = await getDoc(doc(db, 'admins', firebaseUser.uid));
-    return snap.exists();
+    if (snap.exists()) {
+      await seedFirestoreDefaultsIfAdmin(firebaseUser, true);
+      return true;
+    }
+    return false;
   } catch (err) {
     handleFirestoreError(err, OperationType.GET, path);
   }
@@ -2255,5 +2265,77 @@ export async function getAdminAuditLogs(): Promise<AdminAuditLog[]> {
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
   } catch (err) {
     handleFirestoreError(err, OperationType.LIST, path);
+  }
+}
+
+export interface AdminOperatorRecord {
+  uid: string;
+  email: string;
+  grantedAt: string;
+}
+
+export async function getAuthorizedOperators(): Promise<AdminOperatorRecord[]> {
+  const path = 'admins';
+  try {
+    const snap = await getDocs(collection(db, path));
+    return snap.docs
+      .map((d) => {
+        const data = d.data();
+        return {
+          uid: String(data.uid || d.id),
+          email: String(data.email || ''),
+          grantedAt: toIso(data.grantedAt),
+        };
+      })
+      .sort((a, b) => new Date(b.grantedAt).getTime() - new Date(a.grantedAt).getTime());
+  } catch (err) {
+    handleFirestoreError(err, OperationType.LIST, path);
+  }
+}
+
+export async function grantAdminOperator(params: {
+  uid: string;
+  email: string;
+}): Promise<void> {
+  const cleanUid = clamp(params.uid, 128);
+  const cleanEmail = clamp(params.email, 200);
+  if (!/^[a-zA-Z0-9_-]+$/.test(cleanUid)) {
+    throw new Error('Operator UID must only contain letters, numbers, underscores, or hyphens.');
+  }
+  if (!cleanEmail || !cleanEmail.includes('@')) {
+    throw new Error('Please provide a valid operator email address.');
+  }
+
+  const path = `admins/${cleanUid}`;
+  try {
+    await setDoc(doc(db, 'admins', cleanUid), {
+      uid: cleanUid,
+      email: cleanEmail,
+      grantedAt: serverTimestamp(),
+    });
+    await writeAuditLog({
+      action: 'OPERATOR_ACCESS_GRANTED',
+      targetType: 'admins',
+      targetId: cleanUid,
+      details: `Granted Control Center operator privileges to ${cleanEmail} (UID: ${cleanUid}).`,
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.WRITE, path);
+  }
+}
+
+export async function revokeAdminOperator(uid: string): Promise<void> {
+  const cleanUid = clamp(uid, 128);
+  const path = `admins/${cleanUid}`;
+  try {
+    await deleteDoc(doc(db, 'admins', cleanUid));
+    await writeAuditLog({
+      action: 'OPERATOR_ACCESS_REVOKED',
+      targetType: 'admins',
+      targetId: cleanUid,
+      details: `Revoked Control Center operator privileges for UID ${cleanUid}.`,
+    });
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, path);
   }
 }

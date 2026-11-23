@@ -1,19 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  signOut,
+} from 'firebase/auth';
 import { auth, googleProvider, MASTER_ADMIN_EMAIL } from '../lib/firebase.ts';
-import { verifyAdminAccess } from '../lib/firestoreService.ts';
+import { isSuperAdminEmail, verifyAdminAccess } from '../lib/firestoreService.ts';
 
 interface AdminUser {
   id: string;
   email: string;
   full_name: string;
   role: 'admin';
+  isSuperAdmin: boolean;
+}
+
+interface AdminLoginResult {
+  success: boolean;
+  error?: string;
+  pendingUid?: string;
 }
 
 interface AdminAuthContextType {
   admin: AdminUser | null;
   loading: boolean;
-  adminLoginWithGoogle: () => Promise<{ success: boolean; error?: string }>;
+  adminLoginWithGoogle: () => Promise<AdminLoginResult>;
+  adminLoginWithCredentials: (email: string, password: string) => Promise<AdminLoginResult>;
   adminLogout: () => Promise<void>;
   checkAdminSession: () => Promise<boolean>;
 }
@@ -33,11 +46,15 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       const authorized = await verifyAdminAccess(fbUser);
       if (authorized) {
+        const superAdmin = !!fbUser.emailVerified && isSuperAdminEmail(fbUser.email);
         setAdmin({
           id: fbUser.uid,
           email: fbUser.email || MASTER_ADMIN_EMAIL,
-          full_name: fbUser.displayName || 'OX TRADERS Master Admin',
+          full_name:
+            fbUser.displayName ||
+            (superAdmin ? 'OX TRADERS Master Admin' : 'OX TRADERS Operator'),
           role: 'admin',
+          isSuperAdmin: superAdmin,
         });
         return true;
       }
@@ -61,15 +78,18 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return evaluateFirebaseAdmin(auth.currentUser);
   };
 
-  const adminLoginWithGoogle = async () => {
+  const adminLoginWithGoogle = async (): Promise<AdminLoginResult> => {
     try {
       const cred = await signInWithPopup(auth, googleProvider);
       const authorized = await evaluateFirebaseAdmin(cred.user);
       if (!authorized) {
+        const uid = cred.user.uid;
+        const email = cred.user.email || 'this Google account';
         await signOut(auth);
         return {
           success: false,
-          error: `Access denied: ${cred.user.email || 'this Google account'} is not authorized for OX Control Center.`,
+          pendingUid: uid,
+          error: `Access denied: ${email} is not authorized for OX Control Center yet.`,
         };
       }
       return { success: true };
@@ -85,6 +105,61 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         };
       }
       return { success: false, error: err?.message || 'Operator verification failed.' };
+    }
+  };
+
+  const adminLoginWithCredentials = async (
+    email: string,
+    password: string
+  ): Promise<AdminLoginResult> => {
+    const cleanEmail = email.trim();
+    if (!cleanEmail || !password) {
+      return { success: false, error: 'Please enter both operator email and password.' };
+    }
+
+    try {
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      const authorized = await evaluateFirebaseAdmin(cred.user);
+      if (!authorized) {
+        const uid = cred.user.uid;
+        await signOut(auth);
+        return {
+          success: false,
+          pendingUid: uid,
+          error: `Signed in as ${cleanEmail}, but this operator UID is not yet authorized in Firestore /admins.`,
+        };
+      }
+      return { success: true };
+    } catch (err: any) {
+      const code = String(err?.code || '');
+      if (code === 'auth/operation-not-allowed') {
+        return {
+          success: false,
+          error:
+            'Email/Password sign-in is not yet enabled in Firebase Console -> Authentication -> Sign-in method.',
+        };
+      }
+      if (
+        code === 'auth/user-not-found' ||
+        code === 'auth/wrong-password' ||
+        code === 'auth/invalid-credential'
+      ) {
+        return {
+          success: false,
+          error:
+            'Invalid operator email or password (or this operator account has not been created under Firebase Console -> Authentication -> Users yet).',
+        };
+      }
+      if (code === 'auth/invalid-email') {
+        return { success: false, error: 'Please enter a valid operator email address.' };
+      }
+      if (code === 'auth/too-many-requests') {
+        return {
+          success: false,
+          error: 'Too many failed sign-in attempts. Please wait a moment and try again.',
+        };
+      }
+      return { success: false, error: err?.message || 'Operator sign-in failed.' };
     }
   };
 
@@ -104,6 +179,7 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         admin,
         loading,
         adminLoginWithGoogle,
+        adminLoginWithCredentials,
         adminLogout,
         checkAdminSession,
       }}

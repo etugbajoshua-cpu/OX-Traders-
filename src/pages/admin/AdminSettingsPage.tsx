@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AdminOperatorRecord,
   exportFirestoreSnapshot,
   getAdminSettingsAndStats,
+  getAuthorizedOperators,
+  grantAdminOperator,
+  revokeAdminOperator,
   saveAdminSettings,
 } from '../../lib/firestoreService.ts';
+import { useAdminAuth } from '../../context/AdminAuthContext.tsx';
 import {
   Save,
   CheckCircle2,
@@ -15,7 +20,9 @@ import {
   AlertTriangle,
   Copy,
   Check,
-  Globe
+  Globe,
+  UserPlus,
+  Trash2
 } from 'lucide-react';
 
 interface DbStatus {
@@ -33,8 +40,13 @@ interface DbStatus {
 }
 
 export const AdminSettingsPage: React.FC = () => {
+  const { admin } = useAdminAuth();
   const [settings, setSettings] = useState<any[]>([]);
   const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
+  const [operators, setOperators] = useState<AdminOperatorRecord[]>([]);
+  const [newOpUid, setNewOpUid] = useState('');
+  const [newOpEmail, setNewOpEmail] = useState('');
+  const [opSaving, setOpSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -45,9 +57,13 @@ export const AdminSettingsPage: React.FC = () => {
   const fetchSettingsAndDb = async () => {
     try {
       setLoading(true);
-      const data = await getAdminSettingsAndStats();
+      const [data, ops] = await Promise.all([
+        getAdminSettingsAndStats(),
+        getAuthorizedOperators().catch(() => [] as AdminOperatorRecord[]),
+      ]);
       setSettings(data.settings || []);
       setDbStatus(data.dbStatus);
+      setOperators(ops);
     } catch (err) {
       console.error('Failed to load settings:', err);
     } finally {
@@ -58,6 +74,40 @@ export const AdminSettingsPage: React.FC = () => {
   useEffect(() => {
     fetchSettingsAndDb();
   }, []);
+
+  const handleGrantOperator = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setOpSaving(true);
+    setErrorNotice(null);
+    setSavedNotice(null);
+    try {
+      await grantAdminOperator({ uid: newOpUid, email: newOpEmail });
+      setNewOpUid('');
+      setNewOpEmail('');
+      const ops = await getAuthorizedOperators();
+      setOperators(ops);
+      setSavedNotice('Operator access granted and recorded in immutable audit log.');
+      setTimeout(() => setSavedNotice(null), 4000);
+    } catch (err: any) {
+      setErrorNotice(err?.message || 'Failed to grant operator access');
+    } finally {
+      setOpSaving(false);
+    }
+  };
+
+  const handleRevokeOperator = async (uid: string) => {
+    setErrorNotice(null);
+    setSavedNotice(null);
+    try {
+      await revokeAdminOperator(uid);
+      const ops = await getAuthorizedOperators();
+      setOperators(ops);
+      setSavedNotice('Operator access revoked.');
+      setTimeout(() => setSavedNotice(null), 4000);
+    } catch (err: any) {
+      setErrorNotice(err?.message || 'Failed to revoke operator access');
+    }
+  };
 
   const handleValueChange = (key: string, value: string) => {
     setSettings((prev) => prev.map((s) => (s.key === key ? { ...s, value } : s)));
@@ -379,6 +429,86 @@ export const AdminSettingsPage: React.FC = () => {
           <span>{saving ? 'Recording in Audit Log...' : 'Commit Platform Configuration'}</span>
         </button>
       </form>
+
+      {/* Authorized Control Center Operators */}
+      <div className="p-5 sm:p-8 rounded-2xl bg-[#181A20] border border-[#2B313A] shadow-xl space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#2B313A]">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#F0B90B]">
+            <UserPlus className="w-4 h-4" />
+            <span>Authorized Control Center Operators</span>
+          </div>
+          <span className="text-[11px] text-[#848E9C]">
+            Master Admin (veronikapistyur@gmail.com) + /admins UIDs
+          </span>
+        </div>
+
+        <p className="text-xs text-[#848E9C] leading-relaxed">
+          Operators authorized here can sign in via Email &amp; Password at <span className="font-mono text-white">/ox-control-center</span> and perform all Control Center operations (deposits, withdrawals, KYC, plans, tickets, and settings).
+        </p>
+
+        {operators.length > 0 ? (
+          <div className="space-y-2">
+            {operators.map((op) => (
+              <div
+                key={op.uid}
+                className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-xl bg-[#0B0E11] border border-[#2B313A]"
+              >
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">{op.email}</div>
+                  <div className="text-[11px] font-mono text-[#848E9C] truncate">UID: {op.uid}</div>
+                </div>
+                {admin?.isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeOperator(op.uid)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#F6465D]/10 hover:bg-[#F6465D]/20 border border-[#F6465D]/30 text-[#F6465D] text-xs font-semibold shrink-0 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Revoke</span>
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="p-3.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-xs text-[#848E9C]">
+            No secondary operator UIDs added yet.
+          </div>
+        )}
+
+        {admin?.isSuperAdmin ? (
+          <form onSubmit={handleGrantOperator} className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+            <input
+              type="text"
+              required
+              placeholder="Firebase Auth User UID"
+              value={newOpUid}
+              onChange={(e) => setNewOpUid(e.target.value)}
+              className="px-3.5 py-2.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-white text-xs font-mono focus:outline-none focus:border-[#F0B90B]"
+            />
+            <input
+              type="email"
+              required
+              placeholder="admin@oxtraders.onliine"
+              value={newOpEmail}
+              onChange={(e) => setNewOpEmail(e.target.value)}
+              className="px-3.5 py-2.5 rounded-xl bg-[#0B0E11] border border-[#2B313A] text-white text-xs focus:outline-none focus:border-[#F0B90B]"
+            />
+            <button
+              type="submit"
+              disabled={opSaving}
+              className="px-4 py-2.5 rounded-xl bg-[#1E2329] hover:bg-[#2B313A] border border-[#F0B90B]/40 text-[#F0B90B] font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>{opSaving ? 'Granting...' : 'Authorize Operator'}</span>
+            </button>
+          </form>
+        ) : (
+          <p className="text-[11px] text-[#5E6673]">
+            Only Master Admin (Google SSO) can grant or revoke operator UIDs.
+          </p>
+        )}
+      </div>
     </div>
   );
 };
